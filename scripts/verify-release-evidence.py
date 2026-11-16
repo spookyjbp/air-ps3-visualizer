@@ -76,7 +76,7 @@ def main():
         fail("package SHA-256 mismatch")
     if len(package_data) != record.get("size_bytes"):
         fail("package size differs from evidence")
-    for name in ("elf", "eboot", "sfo", "icon0", "pic1", "background_rgb"):
+    for name in ("elf", "eboot", "sfo", "icon0", "background_rgb"):
         item = evidence.get("artifacts", {}).get(name, {})
         if not re.fullmatch(r"[0-9a-f]{64}", item.get("sha256", "")) or item.get("size_bytes", 0) <= 0:
             fail(f"missing or invalid {name} artifact evidence")

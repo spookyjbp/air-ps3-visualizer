@@ -35,7 +35,7 @@ Details, architecture and tuning: **[Visual UI](docs/VISUAL_UI.md)**.
 
 ---
 
-![AIR PS3 — silver XMB-inspired waves with the AirPlay symbol](assets/air-ps3/PIC1.PNG)
+![AIR PS3 — silver XMB-inspired waves with the AirPlay symbol](assets/air-ps3/artwork-source.png)
 
 **Your PlayStation 3, now an AirPlay speaker.**
 

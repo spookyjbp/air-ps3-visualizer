@@ -52,7 +52,7 @@ with tempfile.TemporaryDirectory() as temp:
         "validation": {name: "passed" for name in CHECKS},
         "artifacts": {"package": {"sha256": hashlib.sha256(payload).hexdigest(), "size_bytes": len(payload)}},
     }
-    for name in ("elf", "eboot", "sfo", "icon0", "pic1", "background_rgb"):
+    for name in ("elf", "eboot", "sfo", "icon0", "background_rgb"):
         evidence_data["artifacts"][name] = {"sha256": fake_hash, "size_bytes": 1}
     evidence = root / "release-evidence.json"
     evidence.write_text(json.dumps(evidence_data))

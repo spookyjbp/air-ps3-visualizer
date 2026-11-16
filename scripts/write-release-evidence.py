@@ -48,7 +48,6 @@ def main():
         "eboot": extract_root / "USRDIR/EBOOT.BIN",
         "sfo": extract_root / "PARAM.SFO",
         "icon0": extract_root / "ICON0.PNG",
-        "pic1": extract_root / "PIC1.PNG",
         "background_rgb": extract_root / "USRDIR/background.rgb",
     }
     for label, path in artifact_paths.items():
