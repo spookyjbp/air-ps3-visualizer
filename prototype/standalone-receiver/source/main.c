@@ -19,6 +19,7 @@
 #include <net/net.h>
 #include <net/netctl.h>
 #include <sys/event_queue.h>
+#include <sys/file.h>
 #include <sys/socket.h>
 #include <sysmodule/sysmodule.h>
 #include <sysutil/sysutil.h>
@@ -42,6 +43,9 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 #define RECEIVER_LOG_PATH "/dev_hdd0/tmp/ps3-airplay.log"
 #define BACKGROUND_RGB_PATH "/dev_hdd0/game/AIRPLAY02/USRDIR/background.rgb"
 #define UI_SETTINGS_PATH "/dev_hdd0/game/AIRPLAY02/USRDIR/ui-settings.txt"
+/* Earlier builds installed an XMB background. Installing a PKG never deletes
+ * files, so remove the leftover copy to restore the normal XMB background. */
+#define XMB_PIC1_PATH "/dev_hdd0/game/AIRPLAY02/PIC1.PNG"
 #define RAOP_DISPLAY_NAME "AirPS3"
 #ifndef RAOP_RTSP_PORT
 #define RAOP_RTSP_PORT 5000
@@ -543,6 +547,7 @@ int main(void)
 			RECEIVER_LOG_QUEUE_CAPACITY);
 	(void)log_event("APP_START", 0, 0);
 	(void)log_event("PKG_VERSION_" APP_VERSION_STRING, 0, 0);
+	(void)log_event("XMB_PIC1_REMOVED", sysLv2FsUnlink(XMB_PIC1_PATH) == 0, 0);
 	screen_result = diagnostic_screen_open(&screen, BACKGROUND_RGB_PATH);
 	if (screen_result == DIAGNOSTIC_SCREEN_OK) {
 		int visual_result;
