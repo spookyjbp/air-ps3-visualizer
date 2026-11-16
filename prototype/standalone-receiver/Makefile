@@ -43,6 +43,7 @@ PROJECT_CFILES := \
 	../../src/ui/ui_font.c \
 	../../src/ui/ui_spectrum.c \
 	../../src/ui/ui_theme.c \
+	../../src/ui/ui_trippy.c \
 	../../src/ui/ui_visualizer.c
 INCLUDES := include
 TITLE := AIR PS3

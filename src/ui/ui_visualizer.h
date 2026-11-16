@@ -13,6 +13,11 @@ typedef enum {
 	UI_VIS_HALO,
 	UI_VIS_SCOPE,
 	UI_VIS_NEBULA,
+	/* full-screen abstract modes (ui_trippy) */
+	UI_VIS_FEEDBACK,
+	UI_VIS_TUNNEL,
+	UI_VIS_KALEIDOSCOPE,
+	UI_VIS_PLASMA,
 	UI_VIS_COUNT
 } ui_vis_mode;
 

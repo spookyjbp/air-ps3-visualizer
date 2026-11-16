@@ -5,6 +5,7 @@
 
 #include "ui_canvas.h"
 #include "ui_spectrum.h"
+#include "ui_trippy.h"
 #include "ui_visualizer.h"
 
 #define UI_CANVAS_WIDTH 1280
@@ -50,6 +51,7 @@ typedef struct {
 	ui_canvas bg_hud; /* same, with the legibility scrim behind the info text */
 	ui_spectrum spectrum;
 	ui_visualizer vis;
+	ui_trippy trippy;
 	ui_status status;
 
 	int mode;

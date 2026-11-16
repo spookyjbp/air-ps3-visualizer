@@ -44,6 +44,7 @@ void ui_app_init(ui_app *app, uint32_t *out, uint32_t *bg, uint32_t *bg_hud)
 	bind(&app->bg_hud, bg_hud);
 	ui_spectrum_init(&app->spectrum, 48000.0f);
 	ui_visualizer_init(&app->vis);
+	ui_trippy_init(&app->trippy);
 	app->mode = UI_VIS_SPECTRUM;
 	app->theme = 0;
 	app->hud_visible = 1;
@@ -467,20 +468,7 @@ void ui_app_render(ui_app *app, const float *left, const float *right,
 	ui_spectrum_update(&app->spectrum, left, right, dt);
 	phase_mark(app, UI_PHASE_ANALYSIS);
 
-	/* Start from the cached background and draw the visualizer straight onto
-	 * it: one streaming copy per frame instead of clearing, fading and
-	 * compositing a separate light layer (memory bandwidth dominates on the
-	 * PS3's PPU). */
 	hud = app->hud_blend;
-	if (hud > 0.995f) {
-		ui_canvas_copy(&app->out, &app->bg_hud);
-	} else {
-		ui_canvas_copy(&app->out, &app->bg);
-		if (hud > 0.01f)
-			apply_scrim(&app->out, theme, hud);
-	}
-	phase_mark(app, UI_PHASE_COMPOSE);
-
 	layout.center_x = UI_CANVAS_WIDTH * 0.5f;
 	layout.center_y = 312.0f + (360.0f - 312.0f) * (1.0f - hud);
 	layout.width = 1100.0f;
@@ -496,8 +484,28 @@ void ui_app_render(ui_app *app, const float *left, const float *right,
 	layout.intensity = 0.45f + 0.55f * app->play_blend;
 	if (app->status.state == UI_STATE_PAUSED)
 		layout.intensity *= 0.7f;
-	ui_visualizer_draw(&app->vis, &app->out, mode, theme, &app->spectrum,
-		&layout, app->time, dt);
+
+	if (mode >= UI_VIS_FEEDBACK) {
+		/* full-screen abstract effects paint the whole frame themselves */
+		phase_mark(app, UI_PHASE_COMPOSE);
+		ui_trippy_draw(&app->trippy, &app->out, mode - UI_VIS_FEEDBACK, theme,
+			&app->spectrum, layout.intensity, SCRIM_TOP, SCRIM_RAMP, hud, dt);
+	} else {
+		/* Start from the cached background and draw the visualizer straight
+		 * onto it: one streaming copy per frame instead of clearing, fading
+		 * and compositing a separate light layer (memory bandwidth dominates
+		 * on the PS3's PPU). */
+		if (hud > 0.995f) {
+			ui_canvas_copy(&app->out, &app->bg_hud);
+		} else {
+			ui_canvas_copy(&app->out, &app->bg);
+			if (hud > 0.01f)
+				apply_scrim(&app->out, theme, hud);
+		}
+		phase_mark(app, UI_PHASE_COMPOSE);
+		ui_visualizer_draw(&app->vis, &app->out, mode, theme, &app->spectrum,
+			&layout, app->time, dt);
+	}
 	phase_mark(app, UI_PHASE_VISUAL);
 
 	if (hud > 0.01f) {

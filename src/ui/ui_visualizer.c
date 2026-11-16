@@ -6,7 +6,8 @@
 #define PI_F 3.14159265358979f
 
 static const char *const mode_names[UI_VIS_COUNT] = {
-	"Spectrum", "Ribbons", "Halo", "Scope", "Nebula"
+	"Spectrum", "Ribbons", "Halo", "Scope", "Nebula",
+	"Feedback", "Tunnel", "Kaleidoscope", "Plasma"
 };
 
 static float clampf(float v, float lo, float hi)

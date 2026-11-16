@@ -205,8 +205,33 @@ static int frames_only(int mode, int frames, int state)
 	return (int)(out_px[1000] & 1U);
 }
 
+/* 30 s tour of the abstract modes, rgb24 frames to stdout */
+static int trippy_video(void)
+{
+	const float dt = 1.0f / 60.0f;
+	ui_status st;
+	int frame, total = 60 * 30;
+	setup();
+	base_status(&st, UI_STATE_PLAYING);
+	ui_app_set_status(&app, &st);
+	ui_app_apply_settings(&app, UI_VIS_FEEDBACK, 4, 1);
+	app.hint_timer = 0.0f;
+	for (frame = 0; frame < total; ++frame) {
+		if (frame > 0 && frame % (60 * 7) == 0) {
+			ui_app_command(&app, UI_CMD_NEXT_MODE);
+			ui_app_command(&app, UI_CMD_NEXT_THEME);
+		}
+		step(dt, (uint64_t)frame * 16667U, 1);
+		if (frame % 2 == 0)
+			write_rgb(stdout);
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
+	if (argc >= 2 && strcmp(argv[1], "trippy") == 0)
+		return trippy_video();
 	if (argc >= 4 && strcmp(argv[1], "frames") == 0)
 		return frames_only(atoi(argv[2]), atoi(argv[3]), argc >= 5 ? atoi(argv[4]) : 2);
 	if (argc >= 2 && strcmp(argv[1], "video") == 0)

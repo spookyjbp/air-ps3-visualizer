@@ -24,7 +24,7 @@ Track text and progress come from the sender. The receiver now advertises
 
 | Button | Action |
 | --- | --- |
-| ◀ ▶ (or L1 / R1) | Previous / next visualizer |
+| ◀ ▶ (or L1 / R1) | Previous / next visualizer (9 modes) |
 | △ (or ▲ / ▼) | Next / previous color theme |
 | □ | Hide / show the info panel (visualizer-only view) |
 | ✕ ○ SELECT | Show the control hints again |
@@ -37,6 +37,8 @@ change, and on exit.
 
 ## Visualizers
 
+Nine modes: five classic visualizers and four full-screen abstract ones.
+
 | | |
 | --- | --- |
 | **Spectrum** — 64 log-spaced bars with peak caps and a floor reflection | ![](images/visual-spectrum.jpg) |
@@ -44,6 +46,19 @@ change, and on exit.
 | **Halo** — mirrored radial spectrum, bass at the bottom, pulses on beats | ![](images/visual-halo.jpg) |
 | **Scope** — triggered stereo waveform with phosphor trails | ![](images/visual-scope.jpg) |
 | **Nebula** — a starfield that surges with the kick drum | ![](images/visual-nebula.jpg) |
+| **Feedback** — MilkDrop-style: the last frame zoomed, twisted, warped and colour-drifted, with the waveform painted on top; presets change every ~16 s or on big beats | ![](images/visual-feedback.jpg) |
+| **Tunnel** — flying down a spiralling wormhole; speed follows the energy, twist follows the mids | ![](images/visual-tunnel.jpg) |
+| **Kaleidoscope** — an 8-fold mirrored mandala that blooms with the bass | ![](images/visual-kaleidoscope.jpg) |
+| **Plasma** — flowing interference fields with palette cycling | ![](images/visual-plasma.jpg) |
+
+The last four are full-screen abstract modes (`src/ui/ui_trippy.c`). They
+run at 640×360 using lookup tables, a 1024-entry sine table and integer
+math, then get doubled into the 1280×720 frame with linear interpolation
+(the RSX scales that to 1080p). Their colours come from a cycling palette
+built from the current theme, and they react to bass, mids, treble and
+beats. Feedback's zoom, rotation and fade are scaled by frame time, so it
+looks the same at 30 or 60 fps. Lookup tables are built the first time one
+of these modes is shown (a short pause).
 
 Themes: Aurora, Sunset, Silver, Ocean, Neon, Ember.
 

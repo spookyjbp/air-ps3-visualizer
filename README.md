@@ -10,8 +10,10 @@
 
 - **Clean now-playing screen** — track title, artist · album, progress with
   elapsed/total time, and a status pill (Ready / Connecting / Playing / Paused).
-- **Five visualizers** — Spectrum, Ribbons (XMB-style waves), Halo, Scope and
-  Nebula, all driven by a real-time FFT of the stream with beat detection.
+- **Nine visualizers** — Spectrum, Ribbons (XMB-style waves), Halo, Scope and
+  Nebula, plus four trippy full-screen modes: Feedback (MilkDrop-style),
+  Tunnel, Kaleidoscope and Plasma. All are driven by a real-time FFT of the
+  stream with beat detection.
 - **Six themes** — Aurora, Sunset, Silver, Ocean, Neon, Ember.
 - **Overlays** — volume indicator when you change volume on the phone, and a
   short label when you switch modes or themes.
