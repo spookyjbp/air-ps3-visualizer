@@ -25,11 +25,11 @@
 Details, architecture and tuning: **[Visual UI](docs/VISUAL_UI.md)**.
 
 > **Status:** the UI is covered by host tests and a mocked render-thread test,
-> but this fork has not been run on PS3 hardware yet. It uses the same title ID
+> and builds into a validated debug PKG with the pinned PS3DK v0.27.0
+> toolchain, but this fork has not been run on PS3 hardware yet. It uses the same title ID
 > (`AIRPLAY02`), so installing it replaces upstream AIR PS3 on the console.
-> There's no prebuilt PKG for this fork yet; build it with
-> [Build from Source](docs/BUILD_FROM_SOURCE.md). The download links further
-> down are upstream v1.0.0, which doesn't include the new UI.
+> Build it with [Build from Source](docs/BUILD_FROM_SOURCE.md). The download
+> links further down are upstream v1.0.0, which doesn't include the new UI.
 
 ---
 

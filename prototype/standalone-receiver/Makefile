@@ -62,7 +62,9 @@ else
 SELECT_HEADER_COMPAT := -D__SELECT_H__
 endif
 
-CFLAGS := -O2 -Wall -Wextra -Werror \
+# PS3DK v0.27 marks PSL1GHT sysUtil* names deprecated (they forward to
+# cellSysutil*); keep them as warnings so both SDK layouts build.
+CFLAGS := -O2 -Wall -Wextra -Werror -Wno-error=deprecated-declarations \
 	-Wno-pointer-to-int-cast -Wno-int-to-pointer-cast \
 	-mcpu=cell $(MACHDEP) \
 	-DMBEDTLS_NO_PLATFORM_ENTROPY -DMBEDTLS_PLATFORM_MS_TIME_ALT \

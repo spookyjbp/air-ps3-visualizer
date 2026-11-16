@@ -123,6 +123,15 @@ synthetic song.
   menu pause, command handling, settings persistence, and flip-timeout
   fallback.
 
+## Build status
+
+The receiver (including `src/ui` and `visual_renderer.c`) cross-compiles with
+`-Wall -Wextra -Werror` on PS3DK v0.27.0 (PPU GCC 16.1.0, binutils 2.42), and
+the package script produces a PKG that passes the ELF, SFO and PKG
+validators. With that SDK's installed `cell/` headers, PSL1GHT's `sysUtil*`
+names are marked deprecated, so the Makefile keeps that one warning class
+non-fatal.
+
 ## Not yet verified
 
 - Frame rate and audio stability on a real PS3 (the release gate in
