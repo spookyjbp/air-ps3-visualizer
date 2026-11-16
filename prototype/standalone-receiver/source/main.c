@@ -9,6 +9,8 @@
 #include "pcm_gain.h"
 #include "raop_receiver.h"
 #include "diagnostic_screen.h"
+#include "ui_audio_tap.h"
+#include "visual_renderer.h"
 
 #include <audio/audio.h>
 #include <io/pad.h>
@@ -39,6 +41,8 @@ mbedtls_ms_time_t mbedtls_ms_time(void)
 
 #define RECEIVER_LOG_PATH "/dev_hdd0/tmp/ps3-airplay.log"
 #define BACKGROUND_RGB_PATH "/dev_hdd0/game/AIRPLAY02/USRDIR/background.rgb"
+#define UI_SETTINGS_PATH "/dev_hdd0/game/AIRPLAY02/USRDIR/ui-settings.txt"
+#define RAOP_DISPLAY_NAME "AirPS3"
 #ifndef RAOP_RTSP_PORT
 #define RAOP_RTSP_PORT 5000
 #endif
@@ -76,6 +80,17 @@ static raop_alac_decoder *decoder;
 static raop_pcm_ring pcm_ring;
 static raop_pcm_gain stream_gain;
 static diagnostic_screen screen;
+/* Animated UI (visual_renderer) and the audio copy it visualizes. When the
+ * renderer is not active, the static diagnostic_screen path runs as before. */
+static ui_audio_tap audio_tap;
+static visual_renderer visual;
+static int visual_active;
+static ui_status published_status;
+static int stream_has_played;
+static float progress_base_s;
+static uint64_t progress_stamp_us;
+static uint32_t seen_progress_updates;
+static uint64_t next_status_publish_us;
 static uint8_t decoded_pcm[RAOP_ALAC_PCM_MAX];
 static uint64_t decoded_packet_count;
 static uint64_t decode_attempts;
@@ -108,8 +123,10 @@ static void on_system_event(u64 status, u64 param, void *userdata)
 	if (status == SYSUTIL_DRAW_END) {
 		system_drawing = 0;
 		presentation_failed = 0;
-		diagnostic_screen_invalidate(&screen);
-		resume_pending = 1;
+		if (!visual_active) {
+			diagnostic_screen_invalidate(&screen);
+			resume_pending = 1;
+		}
 		(void)log_event("SYSUTIL_DRAW_END", 0, 0);
 	}
 	if (status == SYSUTIL_MENU_OPEN) {
@@ -119,11 +136,15 @@ static void on_system_event(u64 status, u64 param, void *userdata)
 	if (status == SYSUTIL_MENU_CLOSE) {
 		system_menu_open = 0;
 		presentation_failed = 0;
-		diagnostic_screen_invalidate(&screen);
-		resume_pending = 1;
+		if (!visual_active) {
+			diagnostic_screen_invalidate(&screen);
+			resume_pending = 1;
+		}
 		(void)log_event("SYSUTIL_MENU_CLOSE", 0, 0);
 		(void)log_event("SCREEN_RESUME_REQUEST", 0, 0);
 	}
+	if (visual_active)
+		visual_renderer_set_menu(&visual, system_menu_open || system_drawing);
 	if (status == SYSUTIL_EXIT_GAME) {
 		(void)log_event("SYSUTIL_EXIT_GAME", (int)status, 0);
 		exit_requested = 1;
@@ -143,6 +164,29 @@ static int log_event(const char *event, int value, size_t bytes)
     uint64_t elapsed = sysGetSystemTime() - started_us;
     if (elapsed > main_log_max_us) main_log_max_us = elapsed;
     return ok;
+}
+
+/* Controller mapping for the visual UI:
+ *   Left/Right or L1/R1  previous/next visualizer
+ *   Triangle / Up / Down  next/previous theme
+ *   Square                show/hide the info panel
+ *   any other button      show the control hints */
+static void handle_ui_buttons(unsigned int pressed)
+{
+    if (!visual_active || pressed == 0)
+        return;
+    if (pressed & ((1U << 6) | (1U << 10)))
+        visual_renderer_command(&visual, UI_CMD_PREV_MODE);
+    if (pressed & ((1U << 7) | (1U << 11)))
+        visual_renderer_command(&visual, UI_CMD_NEXT_MODE);
+    if (pressed & ((1U << 8) | (1U << 4)))
+        visual_renderer_command(&visual, UI_CMD_NEXT_THEME);
+    if (pressed & (1U << 5))
+        visual_renderer_command(&visual, UI_CMD_PREV_THEME);
+    if (pressed & (1U << 9))
+        visual_renderer_command(&visual, UI_CMD_TOGGLE_HUD);
+    if (pressed & ((1U << 1) | (1U << 2) | (1U << 3)))
+        visual_renderer_command(&visual, UI_CMD_SHOW_HINTS);
 }
 
 static void poll_controls(int enabled)
@@ -173,6 +217,7 @@ static void poll_controls(int enabled)
         unsigned int buttons = 0;
         unsigned int digital1;
         unsigned int digital2;
+        unsigned int pressed;
         int data_result;
 
         if (!info.status[pad]) {
@@ -216,6 +261,11 @@ static void poll_controls(int enabled)
         buttons |= (data.BTN_DOWN || (digital1 & PAD_CTRL_DOWN)) ? 1U << 5 : 0;
         buttons |= (data.BTN_LEFT || (digital1 & PAD_CTRL_LEFT)) ? 1U << 6 : 0;
         buttons |= (data.BTN_RIGHT || (digital1 & PAD_CTRL_RIGHT)) ? 1U << 7 : 0;
+        buttons |= (data.BTN_TRIANGLE || (digital2 & PAD_CTRL_TRIANGLE)) ? 1U << 8 : 0;
+        buttons |= (data.BTN_SQUARE || (digital2 & PAD_CTRL_SQUARE)) ? 1U << 9 : 0;
+        buttons |= (data.BTN_L1 || (digital2 & PAD_CTRL_L1)) ? 1U << 10 : 0;
+        buttons |= (data.BTN_R1 || (digital2 & PAD_CTRL_R1)) ? 1U << 11 : 0;
+        pressed = pad_button_state_seen[pad] ? buttons & ~last_pad_buttons[pad] : 0;
         if (!pad_button_state_seen[pad] ||
             digital1 != last_pad_digital1[pad] ||
             digital2 != last_pad_digital2[pad]) {
@@ -234,6 +284,7 @@ static void poll_controls(int enabled)
             exit_requested = 1;
             break;
         }
+        handle_ui_buttons(pressed);
     }
     last_pad_mask = (int)connected_mask;
 }
@@ -323,12 +374,15 @@ static void render_next_audio_block(const audioPortConfig *config,
 		AUDIO_BLOCK_SAMPLES;
 	if (!stream_ready) {
 		raop_pcm_ring_render_silence(block, AUDIO_BLOCK_SAMPLES);
+		ui_audio_tap_push(&audio_tap, block, AUDIO_BLOCK_SAMPLES, config->channelCount);
         raop_audio_timing_observe(&audio_timing, started_us,
             sysGetSystemTime()-started_us, observed_index, (u32)config->numBlocks);
 		return;
 	}
 	(void)raop_pcm_ring_render_float(&pcm_ring, active_sample_rate,
 		GAMEOS_AUDIO_RATE, block, AUDIO_BLOCK_SAMPLES);
+	/* Pre-gain copy: visuals look the same at any AirPlay volume. */
+	ui_audio_tap_push(&audio_tap, block, AUDIO_BLOCK_SAMPLES, config->channelCount);
 	raop_pcm_gain_apply(&stream_gain, block, AUDIO_BLOCK_SAMPLES);
 	audio_port_frames_submitted += AUDIO_BLOCK_SAMPLES;
     raop_audio_timing_observe(&audio_timing, started_us,
@@ -349,6 +403,82 @@ static void close_audio(int started, int notify_set, int port_open,
 		(void)sysEventQueueDestroy(queue, 0);
 	if (initialized)
 		(void)audioQuit();
+}
+
+static void copy_text(char *out, size_t size, const char *in)
+{
+	(void)snprintf(out, size, "%s", in);
+}
+
+/* Publishes what the visual UI shows. Cheap when nothing changed. */
+static void publish_ui_status(const uint8_t ip[4])
+{
+	ui_status next;
+	const raop_metadata *meta = &receiver.session.metadata;
+	uint64_t now = sysGetSystemTime();
+	float rate = active_sample_rate > 0 ? (float)active_sample_rate : 44100.0f;
+	int was_playing = published_status.state == UI_STATE_PLAYING;
+	if (!visual_active || now < next_status_publish_us)
+		return;
+	next_status_publish_us = now + 50000U;
+	memset(&next, 0, sizeof(next));
+	switch (receiver.session.state) {
+	case RAOP_SESSION_IDLE:
+		next.state = UI_STATE_IDLE;
+		stream_has_played = 0;
+		break;
+	case RAOP_SESSION_ANNOUNCED:
+	case RAOP_SESSION_SETUP:
+		next.state = UI_STATE_CONNECTING;
+		break;
+	case RAOP_SESSION_PAUSED:
+		next.state = UI_STATE_PAUSED;
+		break;
+	default:
+		if (decoder != NULL && audio_prebuffer_ready) {
+			next.state = UI_STATE_PLAYING;
+			stream_has_played = 1;
+		} else {
+			/* After FLUSH (pause on the phone) the session stays RECORDING. */
+			next.state = stream_has_played ? UI_STATE_PAUSED : UI_STATE_CONNECTING;
+		}
+		break;
+	}
+	copy_text(next.title, sizeof(next.title), meta->title);
+	copy_text(next.artist, sizeof(next.artist), meta->artist);
+	copy_text(next.album, sizeof(next.album), meta->album);
+
+	/* Progress arrives as RTP timestamps; extrapolate only while playing. */
+	if (meta->progress_updates != seen_progress_updates) {
+		seen_progress_updates = meta->progress_updates;
+		progress_base_s = meta->has_progress ?
+			(float)(uint32_t)(meta->progress_current - meta->progress_start) / rate : 0.0f;
+		progress_stamp_us = now;
+	} else if (was_playing && next.state != UI_STATE_PLAYING) {
+		progress_base_s += (float)(now - progress_stamp_us) / 1000000.0f;
+		progress_stamp_us = now;
+	} else if (!was_playing && next.state == UI_STATE_PLAYING) {
+		progress_stamp_us = now;
+	}
+	next.has_progress = meta->has_progress && meta->progress_end != meta->progress_start;
+	next.duration_s = next.has_progress ?
+		(float)(uint32_t)(meta->progress_end - meta->progress_start) / rate : 0.0f;
+	next.position_s = progress_base_s;
+	next.progress_stamp_us = progress_stamp_us;
+
+	next.muted = receiver.session.volume_muted;
+	next.volume_percent = receiver.session.volume_muted ? 0 :
+		(int)((receiver.session.volume_millidb + 30000) / 300);
+	if (next.volume_percent < 0) next.volume_percent = 0;
+	if (next.volume_percent > 100) next.volume_percent = 100;
+	next.volume_updates = receiver.session.volume_updates;
+	copy_text(next.receiver_name, sizeof(next.receiver_name), RAOP_DISPLAY_NAME);
+	(void)snprintf(next.address, sizeof(next.address), "%u.%u.%u.%u",
+		ip[0], ip[1], ip[2], ip[3]);
+	if (memcmp(&next, &published_status, sizeof(next)) == 0)
+		return;
+	published_status = next;
+	visual_renderer_publish(&visual, &next);
 }
 
 int main(void)
@@ -415,8 +545,16 @@ int main(void)
 	(void)log_event("PKG_VERSION_" APP_VERSION_STRING, 0, 0);
 	screen_result = diagnostic_screen_open(&screen, BACKGROUND_RGB_PATH);
 	if (screen_result == DIAGNOSTIC_SCREEN_OK) {
+		int visual_result;
 		(void)log_event("SCREEN_READY", screen.width, 0);
 		(void)log_event("SCREEN_HEIGHT", screen.height, 0);
+		ui_audio_tap_init(&audio_tap);
+		memset(&published_status, 0xff, sizeof(published_status));
+		visual_result = visual_renderer_start(&visual, &screen, &audio_tap,
+			UI_SETTINGS_PATH);
+		visual_active = visual_result == VISUAL_RENDERER_OK;
+		(void)log_event(visual_active ? "VISUAL_READY" : "VISUAL_START_FAILED",
+			visual_result, (size_t)visual.settings_loaded);
 	} else {
 		(void)log_event("SCREEN_INIT_FAILED", screen_result, 0);
 	}
@@ -531,7 +669,16 @@ int main(void)
 		int poll_result;
 		poll_controls(pad_initialized);
 		if (exit_requested) break;
-		if (!presentation_failed) {
+		if (visual_active && !visual.running) {
+			/* The renderer stopped on its own: fall back to the static screen. */
+			int visual_error = visual_renderer_stop(&visual);
+			visual_active = 0;
+			(void)log_event("VISUAL_STOPPED", visual_error, 0);
+			presentation_failed = 0;
+			diagnostic_screen_invalidate(&screen);
+			resume_pending = 1;
+		}
+		if (!visual_active && !presentation_failed) {
 			int present_result = diagnostic_screen_present(&screen, system_menu_open || system_drawing);
 			if (present_result > 0) ++screen_flips;
 			if (present_result < 0) {
@@ -539,7 +686,7 @@ int main(void)
 				presentation_failed = 1;
 			}
 		}
-		if (resume_pending && !system_menu_open && !system_drawing &&
+		if (!visual_active && resume_pending && !system_menu_open && !system_drawing &&
 			!presentation_failed && screen.resume_until_us == 0 &&
 			!screen.flip_pending && screen.redraw_mask == 0) {
 			resume_pending = 0;
@@ -552,6 +699,7 @@ int main(void)
 		}
 		raop_pcm_gain_set_target(&stream_gain,
 			receiver.session.volume_gain);
+		publish_ui_status(ip);
 		if (logged_volume_updates != receiver.session.volume_updates) {
 			logged_volume_updates = receiver.session.volume_updates;
 			(void)log_event("AUDIO_VOLUME",
@@ -728,6 +876,13 @@ int main(void)
 			pad_reports_since_heartbeat = 0;
 			(void)log_event("SCREEN_FLIPS",
 				bounded_counter_delta(screen_flips, 0), screen.redraw_mask);
+			if (visual_active) {
+				uint32_t frames, render_us, copy_us;
+				visual_renderer_take_stats(&visual, &frames, &render_us, &copy_us);
+				(void)log_event("VISUAL_FRAMES", (int)frames, visual.settings_saves);
+				(void)log_event("VISUAL_RENDER_US_MAX", (int)render_us, 0);
+				(void)log_event("VISUAL_COPY_US_MAX", (int)copy_us, 0);
+			}
 			(void)log_event("LOG_QUEUE_DEPTH",
 				(int)log_stats.queued_events, log_stats.queue_overruns);
 			(void)log_event("LOG_WRITE_US_MAX",
@@ -847,6 +1002,10 @@ cleanup:
 	(void)log_event("CLEANUP_BEGIN", 0, 0);
 	if (pad_initialized)
 		(void)ioPadEnd();
+	if (visual_active) {
+		(void)log_event("VISUAL_STOP", visual_renderer_stop(&visual), 0);
+		visual_active = 0;
+	}
 	(void)log_event("SCREEN_CLOSE_START", 0, 0);
 	(void)log_event("SCREEN_CLOSE_DONE", diagnostic_screen_close(&screen), 0);
 	if (decoder != NULL)

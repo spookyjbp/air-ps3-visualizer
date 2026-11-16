@@ -35,3 +35,10 @@ build/forensic/log-cost
  tests/audio/pcm_cost_test.c src/audio/pcm_ring.c -o build/forensic/pcm-cost
 build/forensic/pcm-cost
 python3 tests/observability/display_copy_cost.py
+# Animated UI renderer thread against mocked RSX/flip/thread APIs.
+"$CC" -std=c11 -D_DEFAULT_SOURCE -O1 -Wall -Wextra -Werror -fsanitize=address,undefined -pthread \
+ -DFLIP_TIMEOUT_US=100000U -DSETTINGS_SAVE_DELAY_US=200000U \
+ -Itests/observability/mocks -Iprototype/standalone-receiver/source -Isrc/ui \
+ prototype/standalone-receiver/source/visual_renderer.c src/ui/*.c \
+ tests/observability/visual_renderer_test.c -lm -o build/forensic/visual_renderer
+build/forensic/visual_renderer

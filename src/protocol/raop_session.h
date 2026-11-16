@@ -4,6 +4,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "raop_sdp.h"
+#include "raop_metadata.h"
 #include "../crypto/raop_crypto.h"
 
 #define RAOP_SESSION_REQUEST_MAX 8192
@@ -43,6 +44,7 @@ typedef struct {
 	uint8_t audio_key[RAOP_AES_KEY_SIZE];
 	uint8_t audio_iv[RAOP_AES_IV_SIZE];
 	raop_sdp_offer offer;
+	raop_metadata metadata;
 	raop_session_diagnostic_fn diagnostic;
 	void *diagnostic_context;
 } raop_session;

@@ -1,4 +1,37 @@
-# AIR PS3
+# AIR PS3 — Visualizer Edition
+
+> **This is a fork of [MKWorldWide/ps3-airplay](https://github.com/MKWorldWide/ps3-airplay)**
+> that adds an animated, music-reactive interface. Audio streaming is the same
+> code as upstream.
+
+![Spectrum visualizer with now-playing info](docs/images/visual-spectrum.jpg)
+
+**What's new in this fork**
+
+- **Clean now-playing screen** — track title, artist · album, progress with
+  elapsed/total time, and a status pill (Ready / Connecting / Playing / Paused).
+- **Five visualizers** — Spectrum, Ribbons (XMB-style waves), Halo, Scope and
+  Nebula, all driven by a real-time FFT of the stream with beat detection.
+- **Six themes** — Aurora, Sunset, Silver, Ocean, Neon, Ember.
+- **Overlays** — volume indicator when you change volume on the phone, and a
+  short label when you switch modes or themes.
+- **Controller** — ◀ ▶ / L1 R1 change visualizer, △ changes theme, □ hides the
+  info panel, START exits. Your choices are remembered.
+
+| | | |
+| --- | --- | --- |
+| ![Ribbons](docs/images/visual-ribbons.jpg) | ![Halo](docs/images/visual-halo.jpg) | ![Nebula](docs/images/visual-nebula.jpg) |
+
+Details, architecture and tuning: **[Visual UI](docs/VISUAL_UI.md)**.
+
+> **Status:** the UI is covered by host tests and a mocked render-thread test,
+> but this fork has not been run on PS3 hardware yet. It uses the same title ID
+> (`AIRPLAY02`), so installing it replaces upstream AIR PS3 on the console.
+> There's no prebuilt PKG for this fork yet; build it with
+> [Build from Source](docs/BUILD_FROM_SOURCE.md). The download links further
+> down are upstream v1.0.0, which doesn't include the new UI.
+
+---
 
 ![AIR PS3 — silver XMB-inspired waves with the AirPlay symbol](assets/air-ps3/PIC1.PNG)
 

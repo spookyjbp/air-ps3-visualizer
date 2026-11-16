@@ -25,6 +25,8 @@ The standalone receiver and resident PRX share portable protocol/codec component
 - `src/codec`: bounded ALAC decoder wrapper.
 - `src/audio`: bounded PCM ring, conversion, and resampling.
 - `src/observability`: append-only per-launch 5 MiB capped diagnostics. On PS3, producers enqueue fixed-size lines into a 128-record SPSC queue; a low-priority PPU writer owns file writes/flushes. Queue overruns and write/flush maxima are observable; worker failure cannot be persisted through a failed file sink. Host tests retain synchronous output.
+- `src/ui`: portable animated UI (canvas primitives, baked Inter glyphs, FFT/beat analysis, five visualizers, themes, HUD). On PS3 it runs on a low-priority render thread (`visual_renderer.c`) that borrows the diagnostic screen's scanout and falls back to it on failure. See [Visual UI](VISUAL_UI.md).
+- `src/protocol/raop_metadata.c`: best-effort DMAP now-playing text and `progress:` parsing for `SET_PARAMETER`; malformed bodies are acknowledged and ignored.
 - `prototype/standalone-receiver`: standalone app wiring for discovery, receive, decode, audio output, RSX diagnostic display, and controller-requested exit.
 - `experimental/resident`: diagnostic PRX candidate; decoded PCM is discarded.
 

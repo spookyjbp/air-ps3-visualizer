@@ -38,7 +38,8 @@
 
 static const char *const raop_txt_records[] = {
 	"txtvers=1", "ch=2", "cn=1", "et=0,1", "sr=44100", "ss=16",
-	"tp=UDP", "pw=false", "vn=65537", "vs=105.1", "am=PS3", "sf=0x4"
+	"tp=UDP", "pw=false", "vn=65537", "vs=105.1", "am=PS3", "sf=0x4",
+	"md=0,2"
 };
 
 size_t raop_mdns_service_txt_records(const char *const **records)

@@ -71,6 +71,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
 	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
 	"$PROJECT_ROOT/tests/protocol/raop_session_crypto_test.c" "$HOST_LIBRARY" -lm \
 	-o "$HOST_SESSION_TEST"
 "$HOST_SESSION_TEST"
@@ -82,6 +83,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
 	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
 	"$PROJECT_ROOT/tests/protocol/raop_session_test.c" "$HOST_LIBRARY" -lm \
 	-o "$HOST_STATE_TEST"
 "$HOST_STATE_TEST"
@@ -92,6 +94,7 @@ cc -std=c11 -Wall -Wextra -Werror \
 	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
 	"$PROJECT_ROOT/tests/protocol/raop_sdp_test.c" "$HOST_LIBRARY" -lm \
 	-o "$HOST_SDP_TEST"
 "$HOST_SDP_TEST"
@@ -111,6 +114,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined -pthread \
 	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
 	"$PROJECT_ROOT/src/protocol/raop_rtp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_receiver.c" \
 	"$PROJECT_ROOT/src/observability/receiver_log.c" \
@@ -127,6 +131,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
 	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
 	"$PROJECT_ROOT/src/protocol/raop_rtp.c" \
 	"$PROJECT_ROOT/src/protocol/raop_receiver.c" \
 	"$PROJECT_ROOT/src/codec/alac.c" \
@@ -155,6 +160,24 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
 	"$PROJECT_ROOT/src/codec/raop_alac.c" \
 	"$PROJECT_ROOT/tests/protocol/raop_alac_test.c" -o "$ALAC_TEST"
 (cd "$PROJECT_ROOT" && "$ALAC_TEST")
+
+METADATA_TEST="$PROJECT_ROOT/build/lima-crypto/raop_metadata_test"
+cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+	-I"$PROJECT_ROOT/src/crypto" -I"$PROJECT_ROOT/src/protocol" \
+	-I"$MBEDTLS_INCLUDE" -DMBEDTLS_NO_PLATFORM_ENTROPY \
+	"$PROJECT_ROOT/src/crypto/raop_crypto.c" \
+	"$PROJECT_ROOT/src/protocol/raop_sdp.c" \
+	"$PROJECT_ROOT/src/protocol/raop_session.c" \
+	"$PROJECT_ROOT/src/protocol/raop_metadata.c" \
+	"$PROJECT_ROOT/tests/protocol/raop_metadata_test.c" "$HOST_LIBRARY" -lm \
+	-o "$METADATA_TEST"
+"$METADATA_TEST"
+
+UI_TEST="$PROJECT_ROOT/build/lima-crypto/ui_test"
+cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
+	-I"$PROJECT_ROOT/src/ui" "$PROJECT_ROOT"/src/ui/*.c \
+	"$PROJECT_ROOT/tests/ui/ui_test.c" -lm -o "$UI_TEST"
+(cd "$PROJECT_ROOT" && UBSAN_OPTIONS=halt_on_error=1 "$UI_TEST")
 
 PCM_RING_TEST="$PROJECT_ROOT/build/lima-crypto/pcm_ring_test"
 cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
@@ -185,7 +208,7 @@ cc -std=c11 -Wall -Wextra -Werror -g -fsanitize=address,undefined \
 	-I"$MBEDTLS_INCLUDE" -I"$PS3DK_SOURCE/sdk/include" \
 	-c "$PROJECT_ROOT/src/crypto/raop_crypto.c" \
 	-o "$PPU_OBJECT"
-for source in raop_session raop_receiver; do
+for source in raop_session raop_metadata raop_receiver; do
 	"$PPU_CC" -std=c11 -Wall -Wextra -Werror -mcpu=cell -mhard-float \
 		-fmodulo-sched $PPU_CFLAGS -I"$PROJECT_ROOT/src/crypto" \
 		-I"$PROJECT_ROOT/src/protocol" \

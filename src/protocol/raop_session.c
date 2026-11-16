@@ -188,6 +188,30 @@ static int parse_parameter_volume(const request_fields *fields,
 	return 1;
 }
 
+static void session_diagnostic(raop_session *session, const char *event,
+	int value, size_t bytes);
+
+/* Now-playing metadata is best effort: malformed or unknown bodies are
+ * ignored and still answered 200 so a sender never drops the session over it. */
+static void apply_metadata(raop_session *session, const request_fields *fields,
+	const char *request)
+{
+	size_t type_length = strlen(fields->content_type);
+	const char *body = request + fields->body_offset;
+	if (fields->body_length == 0)
+		return;
+	if (ascii_equal(fields->content_type, type_length,
+		"application/x-dmap-tagged")) {
+		int ok = raop_metadata_parse_dmap(&session->metadata,
+			(const uint8_t *)body, fields->body_length);
+		session_diagnostic(session, "METADATA_TEXT", ok, fields->body_length);
+	} else if (ascii_equal(fields->content_type, type_length,
+		"text/parameters")) {
+		(void)raop_metadata_parse_progress(&session->metadata, body,
+			fields->body_length);
+	}
+}
+
 static void set_volume(raop_session *session, int32_t requested_millidb)
 {
 	int32_t applied_millidb = requested_millidb;
@@ -680,6 +704,8 @@ int raop_session_handle(raop_session *session, const char *request,
 			status = 400;
 			reason = "Bad Request";
 		} else {
+			if (strcmp(fields.method, "SET_PARAMETER") == 0)
+				apply_metadata(session, &fields, request);
 			extra = "Session: PS3AIRPLAY000001\r\n";
 		}
 	} else {
@@ -726,6 +752,7 @@ int raop_session_handle(raop_session *session, const char *request,
 				sizeof(session->audio_iv));
 			session->has_audio_key = 0;
 			memset(&session->offer, 0, sizeof(session->offer));
+			raop_metadata_clear(&session->metadata);
 			session->volume_millidb = 0;
 			session->volume_gain = 1.0f;
 			session->volume_muted = 0;

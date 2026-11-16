@@ -22,11 +22,12 @@ include $(PSL1GHT)/ppu_rules
 TARGET := ps3-airplay-receiver
 BUILD := build
 SOURCES := source
-PROJECT_SOURCES := ../../src/discovery ../../src/protocol ../../src/crypto ../../src/codec ../../src/audio ../../src/observability
+PROJECT_SOURCES := ../../src/discovery ../../src/protocol ../../src/crypto ../../src/codec ../../src/audio ../../src/observability ../../src/ui
 PROJECT_CFILES := \
 	../../src/discovery/raop_mdns.c \
 	../../src/discovery/raop_mdns_service.c \
 	../../src/protocol/raop_session.c \
+	../../src/protocol/raop_metadata.c \
 	../../src/protocol/raop_sdp.c \
 	../../src/protocol/raop_rtp.c \
 	../../src/protocol/raop_receiver.c \
@@ -35,13 +36,21 @@ PROJECT_CFILES := \
 	../../src/codec/raop_alac.c \
 	../../src/audio/pcm_ring.c \
 	../../src/audio/pcm_gain.c \
-	../../src/observability/receiver_log.c
+	../../src/observability/receiver_log.c \
+	../../src/ui/ui_app.c \
+	../../src/ui/ui_audio_tap.c \
+	../../src/ui/ui_canvas.c \
+	../../src/ui/ui_font.c \
+	../../src/ui/ui_spectrum.c \
+	../../src/ui/ui_theme.c \
+	../../src/ui/ui_visualizer.c
 INCLUDES := include
 TITLE := AIR PS3
 APPID := AIRPLAY02
 CONTENTID := UP0001-$(APPID)_00-0000000000000000
 APP_VERSION ?= $(shell python3 "$(REPO_ROOT)/scripts/read-release-config.py" app_version)
 RTSP_PORT ?= 5000
+VISUAL_TARGET_FPS ?= 60
 
 ifeq ($(LEGACY_RUNTIME),1)
 # The 2020 PSL1GHT headers declare select() through net/select.h. Do not set
@@ -60,7 +69,7 @@ CFLAGS := -O2 -Wall -Wextra -Werror \
 	-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls_ps3_user_config.h\" \
 	-DRAOP_USE_PSL1GHT -DRAOP_VERBOSE_LOGGING=1 \
 	-DAPP_VERSION_STRING=\"$(APP_VERSION)\" \
-	-DRAOP_RTSP_PORT=$(RTSP_PORT) $(SELECT_HEADER_COMPAT) \
+	-DRAOP_RTSP_PORT=$(RTSP_PORT) -DVISUAL_TARGET_FPS=$(VISUAL_TARGET_FPS) $(SELECT_HEADER_COMPAT) \
 	-include $(PS3DK)/ppu/include/sys/select.h \
 	-I$(MBEDTLS_INCLUDE) $(INCLUDE)
 LIBS := -laudio -lgcm_sys -lrsx -lio -lsysutil -lnetctl -lnet -lsysmodule -lrt -lm \
