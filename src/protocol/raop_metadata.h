@@ -6,7 +6,7 @@
 
 /* Now-playing information a sender pushes with SET_PARAMETER when the
  * receiver advertises md=0,2 (text metadata and progress, no artwork). */
-#define RAOP_METADATA_TEXT_MAX 128
+#define RAOP_METADATA_TEXT_MAX 256
 
 typedef struct {
 	char title[RAOP_METADATA_TEXT_MAX];

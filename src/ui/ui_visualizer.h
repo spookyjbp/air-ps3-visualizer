@@ -16,7 +16,7 @@ typedef enum {
 	UI_VIS_COUNT
 } ui_vis_mode;
 
-#define UI_NEBULA_PARTICLES 260
+#define UI_NEBULA_PARTICLES 200
 
 typedef struct {
 	float x, y, z;      /* z: depth 0..1, smaller is closer to the viewer */
@@ -25,8 +25,14 @@ typedef struct {
 	int has_prev;
 } ui_particle;
 
+#define UI_SCOPE_MAX_WIDTH 1100
+#define UI_SCOPE_HISTORY 4
+
 typedef struct {
 	ui_particle particles[UI_NEBULA_PARTICLES];
+	float scope_y[UI_SCOPE_HISTORY][2][UI_SCOPE_MAX_WIDTH];
+	float scope_edge[UI_SCOPE_MAX_WIDTH];
+	int scope_frames;
 	uint32_t rng;
 	float spin;
 	float travel;
@@ -43,8 +49,7 @@ typedef struct {
 
 const char *ui_visualizer_name(int mode);
 void ui_visualizer_init(ui_visualizer *v);
-/* How much of the previous frame's light layer to keep (0..256). */
-int ui_visualizer_trail_keep(int mode);
+/* Draws additively onto the frame (which already holds the background). */
 void ui_visualizer_draw(ui_visualizer *v, ui_canvas *fx, int mode,
 	const ui_theme *theme, const ui_spectrum *s, const ui_vis_layout *layout,
 	float time, float dt);

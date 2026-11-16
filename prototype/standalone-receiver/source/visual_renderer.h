@@ -19,12 +19,16 @@
  * thread reads the counters here and logs them. */
 
 #ifndef VISUAL_TARGET_FPS
-#define VISUAL_TARGET_FPS 60
+#define VISUAL_TARGET_FPS 30
 #endif
 #ifndef VISUAL_AUDIO_DELAY_FRAMES
 #define VISUAL_AUDIO_DELAY_FRAMES 1024 /* ~21 ms at 48 kHz: lines visuals up with sound */
 #endif
 #define VISUAL_COMMAND_QUEUE 16
+#ifndef VISUAL_GPU_COPY
+#define VISUAL_GPU_COPY 1
+#endif
+#define VISUAL_GPU_FRAME_OFFSET (2U * 1024U * 1024U)
 
 enum visual_renderer_result {
 	VISUAL_RENDERER_OK = 0,
@@ -40,10 +44,15 @@ typedef struct {
 	const ui_audio_tap *tap;
 	char settings_path[128];
 	uint64_t thread_id;
-	uint32_t *pixels; /* one allocation for the four UI canvases */
+	uint32_t *pixels; /* one allocation: CPU frame + two cached backgrounds */
 	uint32_t *x_map;  /* canvas column for each scanout column */
 	uint32_t *y_map;
 	int thread_started;
+	/* GPU copy: two frames in RSX-mapped main memory, scaled to the
+	 * framebuffer by the RSX blit engine instead of the CPU. */
+	uint32_t *gpu_frames[2];
+	uint32_t gpu_offsets[2];
+	int gpu_copy;
 
 	/* main -> render */
 	volatile int stop_requested;
@@ -60,6 +69,7 @@ typedef struct {
 	volatile uint32_t frames;
 	volatile uint32_t render_us_max;
 	volatile uint32_t copy_us_max;
+	volatile uint32_t phase_us_max[4]; /* analysis, visualizer, compose, info */
 	volatile uint32_t settings_saves;
 	volatile int settings_loaded;
 } visual_renderer;
@@ -74,6 +84,6 @@ void visual_renderer_command(visual_renderer *renderer, ui_command command);
 void visual_renderer_publish(visual_renderer *renderer, const ui_status *status);
 /* Reads and resets the per-interval maxima. */
 void visual_renderer_take_stats(visual_renderer *renderer, uint32_t *frames,
-	uint32_t *render_us_max, uint32_t *copy_us_max);
+	uint32_t *render_us_max, uint32_t *copy_us_max, uint32_t phase_us_max[4]);
 
 #endif

@@ -55,6 +55,48 @@ static void test_text(void)
 	assert(out[0] == '\0');
 }
 
+static void test_wrap(void)
+{
+	char lines[3][UI_WRAP_LINE_BYTES];
+	int complete = 0, n, i;
+	const char *long_title =
+		"Juice WRLD - All Girls Are The Same / Lucid Dreams / Robbery (Live at the "
+		"Hollywood Palladium, Los Angeles, 2019) [Remastered Extended Edition]";
+	n = ui_text_wrap(UI_FONT_TITLE, "Short", 0, 1000, 2, lines, &complete);
+	assert(n == 1 && complete && strcmp(lines[0], "Short") == 0);
+	n = ui_text_wrap(UI_FONT_TITLE, "  ", 0, 1000, 2, lines, &complete);
+	assert(n == 0 && complete);
+	n = ui_text_wrap(UI_FONT_HEADING, long_title, 0, 1120, 3, lines, &complete);
+	assert(n == 3 && complete);
+	for (i = 0; i < n; ++i)
+		assert(ui_text_width(UI_FONT_HEADING, lines[i], 0) <= 1120);
+	/* every word survives, in order */
+	{
+		char joined[400] = "";
+		for (i = 0; i < n; ++i) {
+			if (i) strcat(joined, " ");
+			strcat(joined, lines[i]);
+		}
+		assert(strcmp(joined, long_title) == 0);
+	}
+	/* not enough room: the last line is ellipsized */
+	n = ui_text_wrap(UI_FONT_TITLE, long_title, 0, 500, 2, lines, &complete);
+	assert(n == 2 && !complete);
+	assert(strcmp(lines[1] + strlen(lines[1]) - 3, "...") == 0);
+	assert(ui_text_width(UI_FONT_TITLE, lines[1], 0) <= 500);
+	/* an unbreakable word is split between characters, never mid-UTF-8 */
+	n = ui_text_wrap(UI_FONT_BODY,
+		"\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9\xc3\xa9",
+		0, 60, 3, lines, &complete);
+	assert(n >= 2);
+	for (i = 0; i < n; ++i) {
+		const char *p = lines[i];
+		assert(ui_text_width(UI_FONT_BODY, lines[i], 0) <= 60);
+		while (*p)
+			assert(ui_utf8_next(&p) != 0xfffd);
+	}
+}
+
 static void test_spectrum(void)
 {
 	static ui_spectrum s;
@@ -135,17 +177,17 @@ static void test_render(void)
 {
 	size_t pixels = (size_t)UI_CANVAS_WIDTH * UI_CANVAS_HEIGHT;
 	uint32_t *out = malloc(pixels * 4), *bg = malloc(pixels * 4),
-		*bg_hud = malloc(pixels * 4), *fx = malloc(pixels * 4);
+		*bg_hud = malloc(pixels * 4);
 	static ui_app app;
 	static float l[UI_FFT_SIZE], r[UI_FFT_SIZE];
 	ui_status st;
 	int mode, theme, state, frame, i;
-	assert(out && bg && bg_hud && fx);
+	assert(out && bg && bg_hud);
 	for (i = 0; i < UI_FFT_SIZE; ++i) {
 		l[i] = 0.9f * sinf((float)i * 0.05f) + 0.3f * sinf((float)i * 0.9f);
 		r[i] = -l[i];
 	}
-	ui_app_init(&app, out, bg, bg_hud, fx);
+	ui_app_init(&app, out, bg, bg_hud);
 	memset(&st, 0, sizeof(st));
 	(void)snprintf(st.title, sizeof(st.title), "%s",
 		"An extraordinarily long title that must be truncated before the right column \xe2\x80\x94 really");
@@ -186,13 +228,13 @@ static void test_render(void)
 	free(out);
 	free(bg);
 	free(bg_hud);
-	free(fx);
 }
 
 int main(void)
 {
 	test_pixels();
 	test_text();
+	test_wrap();
 	test_spectrum();
 	test_tap();
 	test_settings();

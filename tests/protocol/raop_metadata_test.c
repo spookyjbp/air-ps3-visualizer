@@ -97,7 +97,7 @@ static void test_dmap(void)
 
 	/* Oversized strings are truncated, not overflowed. */
 	{
-		char long_title[400];
+		char long_title[600];
 		memset(long_title, 'z', sizeof(long_title) - 1);
 		long_title[sizeof(long_title) - 1] = '\0';
 		n = build_listing(body, long_title, "a", "b");

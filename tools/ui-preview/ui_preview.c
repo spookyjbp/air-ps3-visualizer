@@ -23,7 +23,6 @@
 static uint32_t out_px[UI_CANVAS_WIDTH * UI_CANVAS_HEIGHT];
 static uint32_t bg_px[UI_CANVAS_WIDTH * UI_CANVAS_HEIGHT];
 static uint32_t bg_hud_px[UI_CANVAS_WIDTH * UI_CANVAS_HEIGHT];
-static uint32_t fx_px[UI_CANVAS_WIDTH * UI_CANVAS_HEIGHT];
 static ui_app app;
 static ui_audio_tap tap;
 static uint32_t noise_state = 12345;
@@ -72,7 +71,8 @@ static void base_status(ui_status *st, int state)
 	(void)snprintf(st->receiver_name, sizeof(st->receiver_name), "AirPS3");
 	(void)snprintf(st->address, sizeof(st->address), "192.168.1.42");
 	if (state != UI_STATE_IDLE) {
-		(void)snprintf(st->title, sizeof(st->title), "Midnight Drive");
+		(void)snprintf(st->title, sizeof(st->title), "%s",
+			getenv("UI_PREVIEW_TITLE") ? getenv("UI_PREVIEW_TITLE") : "Midnight Drive");
 		(void)snprintf(st->artist, sizeof(st->artist), "Nova Lights");
 		(void)snprintf(st->album, sizeof(st->album), "Neon Coast");
 		st->has_progress = 1;
@@ -116,7 +116,7 @@ static void write_rgb(FILE *f)
 
 static void setup(void)
 {
-	ui_app_init(&app, out_px, bg_px, bg_hud_px, fx_px);
+	ui_app_init(&app, out_px, bg_px, bg_hud_px);
 	ui_audio_tap_init(&tap);
 }
 
@@ -191,8 +191,24 @@ static int bench(void)
 	return 0;
 }
 
+/* Runs FRAMES frames of one mode (for instruction-count profiling). */
+static int frames_only(int mode, int frames, int state)
+{
+	ui_status st;
+	int frame;
+	setup();
+	ui_app_apply_settings(&app, mode, 1, 1);
+	base_status(&st, state);
+	ui_app_set_status(&app, &st);
+	for (frame = 0; frame < frames; ++frame)
+		step(1.0f / 30.0f, (uint64_t)frame * 33333U, 1);
+	return (int)(out_px[1000] & 1U);
+}
+
 int main(int argc, char **argv)
 {
+	if (argc >= 4 && strcmp(argv[1], "frames") == 0)
+		return frames_only(atoi(argv[2]), atoi(argv[3]), argc >= 5 ? atoi(argv[4]) : 2);
 	if (argc >= 2 && strcmp(argv[1], "video") == 0)
 		return video();
 	if (argc >= 6 && strcmp(argv[1], "still") == 0)

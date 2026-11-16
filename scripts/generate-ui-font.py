@@ -20,6 +20,7 @@ FACES = [
     ("small", "Inter-SemiBold.otf", 19),
     ("body", "Inter-Medium.otf", 30),
     ("title", "InterDisplay-SemiBold.otf", 56),
+    ("heading", "InterDisplay-SemiBold.otf", 40),
 ]
 CODEPOINTS = list(range(32, 127)) + list(range(160, 256))
 

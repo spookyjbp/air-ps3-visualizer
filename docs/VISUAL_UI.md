@@ -83,17 +83,50 @@ Canvas memory: four 1280×720 XRGB buffers (~14.7 MB). The UI renders at
 
 ## Performance and tuning
 
-On a desktop CPU a full frame takes about 2.5–5 ms depending on the mode
-(`build/preview/ui_preview bench`). The PS3's PPU is considerably slower
-per clock, and this has not been measured on hardware yet. Rendering runs on
-its own thread below the audio thread's priority, so a slow frame lowers the
-frame rate rather than interrupting audio.
+The first hardware test (1080p output) ran at 5–10 fps: the CPU spent ~21 ms
+per frame scaling and copying 1280×720 to the 1920×1080 framebuffer, and
+70–350 ms drawing, mostly in per-pixel float math and full-frame passes that
+the Cell PPU handles poorly. Audio was unaffected. The renderer now:
+
+- draws into one of two frames in RSX-mapped main memory and lets the RSX
+  blit engine scale and copy it to the framebuffer (`VISUAL_GPU_COPY`, on by
+  default; bilinear when the output isn't 720p);
+- draws visualizers straight onto a cached background copy instead of
+  clearing, fading and compositing a separate light layer; Scope's echoes and
+  Nebula's streaks are drawn per frame instead;
+- uses integer/fixed-point inner loops (bars, glows, spans, background) and
+  band-limited line rasterization, so pixel loops avoid float-to-int
+  conversions;
+- targets 30 fps by default (`VISUAL_TARGET_FPS`).
+
+Under PowerPC emulation this cut per-frame instruction counts by 3–4×
+(about 9–15 M instructions per frame depending on mode). Real frame times
+come from the log; each heartbeat now records:
+
+| Log event | Meaning |
+| --- | --- |
+| `VISUAL_FRAMES` | frames drawn so far |
+| `VISUAL_RENDER_US_MAX` | slowest whole frame in the last 10 s |
+| `VISUAL_ANALYSIS_US_MAX` | FFT and band analysis |
+| `VISUAL_COMPOSE_US_MAX` | background copy |
+| `VISUAL_DRAW_US_MAX` | the visualizer |
+| `VISUAL_INFO_US_MAX` | text, overlays |
+| `VISUAL_COPY_US_MAX` | queueing the GPU copy (value 2 field = 1 when the GPU path is active) |
+| `VISUAL_GPU_COPY` | at start: 1 if the GPU copy path is in use |
 
 Build knobs (pass to `make` in `prototype/standalone-receiver`):
 
-- `VISUAL_TARGET_FPS=30` caps the frame rate (default 60).
+- `VISUAL_TARGET_FPS=60` raises the frame-rate cap (default 30).
+- `VISUAL_GPU_COPY=0` (compile-time define) falls back to the CPU copy.
 - `VISUAL_AUDIO_DELAY_FRAMES` (compile-time define in `visual_renderer.h`)
   shifts visuals relative to sound if your TV adds latency.
+
+## Long titles
+
+Titles use the full width of the screen. They wrap onto two lines at the
+large size; if that isn't enough they switch to a smaller size with up to
+three lines, and the visualizer moves up to make room. Only titles that still
+don't fit get "...". Metadata text is kept up to 255 bytes.
 
 ## Preview on a computer
 

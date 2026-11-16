@@ -6,6 +6,8 @@ const ui_font *ui_font_get(ui_font_id id)
 	switch (id) {
 	case UI_FONT_TITLE:
 		return &ui_font_title;
+	case UI_FONT_HEADING:
+		return &ui_font_heading;
 	case UI_FONT_BODY:
 		return &ui_font_body;
 	case UI_FONT_SMALL:

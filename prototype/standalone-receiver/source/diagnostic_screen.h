@@ -3,6 +3,11 @@
 
 #include <stdint.h>
 
+/* Main-memory region mapped for RSX I/O. The first megabyte holds the
+ * command buffer; visual_renderer places its GPU-readable frames above it. */
+#define DIAGNOSTIC_SCREEN_COMMAND_BYTES 0x100000U
+#define DIAGNOSTIC_SCREEN_IO_BYTES (32U * 1024U * 1024U)
+
 #ifndef DIAGNOSTIC_SCREEN_RESUME_US
 #define DIAGNOSTIC_SCREEN_RESUME_US 350000U
 #endif

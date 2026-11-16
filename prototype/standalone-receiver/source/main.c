@@ -555,6 +555,7 @@ int main(void)
 		visual_active = visual_result == VISUAL_RENDERER_OK;
 		(void)log_event(visual_active ? "VISUAL_READY" : "VISUAL_START_FAILED",
 			visual_result, (size_t)visual.settings_loaded);
+		(void)log_event("VISUAL_GPU_COPY", visual.gpu_copy, 0);
 	} else {
 		(void)log_event("SCREEN_INIT_FAILED", screen_result, 0);
 	}
@@ -877,11 +878,17 @@ int main(void)
 			(void)log_event("SCREEN_FLIPS",
 				bounded_counter_delta(screen_flips, 0), screen.redraw_mask);
 			if (visual_active) {
-				uint32_t frames, render_us, copy_us;
-				visual_renderer_take_stats(&visual, &frames, &render_us, &copy_us);
+				uint32_t frames, render_us, copy_us, phase_us[4];
+				visual_renderer_take_stats(&visual, &frames, &render_us, &copy_us,
+					phase_us);
 				(void)log_event("VISUAL_FRAMES", (int)frames, visual.settings_saves);
 				(void)log_event("VISUAL_RENDER_US_MAX", (int)render_us, 0);
-				(void)log_event("VISUAL_COPY_US_MAX", (int)copy_us, 0);
+				(void)log_event("VISUAL_COPY_US_MAX", (int)copy_us,
+					(size_t)visual.gpu_copy);
+				(void)log_event("VISUAL_ANALYSIS_US_MAX", (int)phase_us[0], 0);
+				(void)log_event("VISUAL_DRAW_US_MAX", (int)phase_us[1], 0);
+				(void)log_event("VISUAL_COMPOSE_US_MAX", (int)phase_us[2], 0);
+				(void)log_event("VISUAL_INFO_US_MAX", (int)phase_us[3], 0);
 			}
 			(void)log_event("LOG_QUEUE_DEPTH",
 				(int)log_stats.queued_events, log_stats.queue_overruns);

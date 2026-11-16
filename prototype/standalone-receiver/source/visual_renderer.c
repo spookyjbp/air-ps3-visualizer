@@ -25,6 +25,11 @@
 #define RENDER_THREAD_STACK (64U * 1024U)
 
 static ui_app app;
+
+static uint64_t clock_us(void)
+{
+	return (uint64_t)sysGetSystemTime();
+}
 static float wave_left[UI_FFT_SIZE];
 static float wave_right[UI_FFT_SIZE];
 
@@ -47,6 +52,45 @@ static void copy_canvas(visual_renderer *r, uint32_t buffer_index)
 		for (x = 0; x < s->width; ++x)
 			row[x] = src_row[r->x_map[x]];
 	}
+}
+
+/* Queue an RSX scaled blit of the finished frame into a scanout buffer.
+ * Runs on the GPU, ahead of the flip in the same command stream. */
+static void gpu_copy(visual_renderer *r, uint32_t frame, uint32_t buffer_index)
+{
+	diagnostic_screen *s = r->screen;
+	gcmContextData *context = (gcmContextData *)s->context;
+	gcmTransferScale scale;
+	gcmTransferSurface surface;
+	int scaled = s->width != UI_CANVAS_WIDTH || s->height != UI_CANVAS_HEIGHT;
+	memset(&scale, 0, sizeof(scale));
+	memset(&surface, 0, sizeof(surface));
+	scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
+	scale.format = GCM_TRANSFER_SCALE_FORMAT_X8R8G8B8;
+	scale.operation = GCM_TRANSFER_OPERATION_SRCCOPY;
+	scale.clipX = 0;
+	scale.clipY = 0;
+	scale.clipW = s->width;
+	scale.clipH = s->height;
+	scale.outX = 0;
+	scale.outY = 0;
+	scale.outW = s->width;
+	scale.outH = s->height;
+	scale.ratioX = rsxGetFixedSint32((float)UI_CANVAS_WIDTH / (float)s->width);
+	scale.ratioY = rsxGetFixedSint32((float)UI_CANVAS_HEIGHT / (float)s->height);
+	scale.inX = rsxGetFixedUint16(0.0f);
+	scale.inY = rsxGetFixedUint16(0.0f);
+	scale.inW = UI_CANVAS_WIDTH;
+	scale.inH = UI_CANVAS_HEIGHT;
+	scale.pitch = UI_CANVAS_WIDTH * sizeof(uint32_t);
+	scale.origin = scaled ? GCM_TRANSFER_ORIGIN_CENTER : GCM_TRANSFER_ORIGIN_CORNER;
+	scale.interp = scaled ? GCM_TRANSFER_INTERPOLATOR_LINEAR : GCM_TRANSFER_INTERPOLATOR_NEAREST;
+	scale.offset = r->gpu_offsets[frame];
+	surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
+	surface.pitch = s->pitch;
+	surface.offset = s->offsets[buffer_index];
+	rsxSetTransferScaleMode(context, GCM_TRANSFER_MAIN_TO_LOCAL, GCM_TRANSFER_SURFACE);
+	rsxSetTransferScaleSurface(context, &scale, &surface);
 }
 
 static int issue_flip(visual_renderer *r, uint32_t buffer, uint64_t now)
@@ -102,6 +146,7 @@ static void render_thread(void *argument)
 	uint64_t last_flip_us = 0;
 	uint64_t dirty_since_us = 0;
 	uint32_t seen_sequence = 0xffffffffU;
+	uint32_t gpu_frame = 0;
 	ui_status status;
 
 	r->running = 1;
@@ -151,6 +196,8 @@ static void render_thread(void *argument)
 			ui_app_set_status(&app, &status);
 		}
 
+		if (r->gpu_copy)
+			ui_app_set_output(&app, r->gpu_frames[gpu_frame]);
 		render_started = sysGetSystemTime();
 		(void)ui_audio_tap_snapshot(r->tap, wave_left, wave_right, UI_FFT_SIZE,
 			VISUAL_AUDIO_DELAY_FRAMES);
@@ -162,7 +209,20 @@ static void render_thread(void *argument)
 		if (elapsed > r->render_us_max)
 			r->render_us_max = elapsed;
 
-		copy_canvas(r, s->next_buffer);
+		if (r->gpu_copy) {
+			gpu_copy(r, gpu_frame, s->next_buffer);
+			gpu_frame ^= 1U;
+		} else {
+			copy_canvas(r, s->next_buffer);
+		}
+		{
+			int k;
+			for (k = 0; k < 4; ++k) {
+				if (app.phase_us[k] > r->phase_us_max[k])
+					r->phase_us_max[k] = app.phase_us[k];
+				app.phase_us[k] = 0;
+			}
+		}
 		now = sysGetSystemTime();
 		elapsed = (uint32_t)(now - copy_started);
 		if (elapsed > r->copy_us_max)
@@ -221,7 +281,7 @@ int visual_renderer_start(visual_renderer *r, diagnostic_screen *screen,
 	r->tap = tap;
 	(void)snprintf(r->settings_path, sizeof(r->settings_path), "%s", settings_path);
 
-	r->pixels = (uint32_t *)memalign(128, CANVAS_PIXELS * 4U * sizeof(uint32_t));
+	r->pixels = (uint32_t *)memalign(128, CANVAS_PIXELS * 3U * sizeof(uint32_t));
 	r->x_map = (uint32_t *)malloc((size_t)screen->width * sizeof(uint32_t));
 	r->y_map = (uint32_t *)malloc((size_t)screen->height * sizeof(uint32_t));
 	if (r->pixels == NULL || r->x_map == NULL || r->y_map == NULL) {
@@ -237,7 +297,17 @@ int visual_renderer_start(visual_renderer *r, diagnostic_screen *screen,
 		r->y_map[i] = (i * UI_CANVAS_HEIGHT) / screen->height;
 
 	ui_app_init(&app, r->pixels, r->pixels + CANVAS_PIXELS,
-		r->pixels + CANVAS_PIXELS * 2U, r->pixels + CANVAS_PIXELS * 3U);
+		r->pixels + CANVAS_PIXELS * 2U);
+	app.clock_us = clock_us;
+	if (VISUAL_GPU_COPY && screen->host_memory != NULL &&
+		VISUAL_GPU_FRAME_OFFSET + 2U * CANVAS_PIXELS * sizeof(uint32_t) <=
+			DIAGNOSTIC_SCREEN_IO_BYTES) {
+		uint8_t *base = (uint8_t *)screen->host_memory + VISUAL_GPU_FRAME_OFFSET;
+		r->gpu_frames[0] = (uint32_t *)base;
+		r->gpu_frames[1] = (uint32_t *)(base + CANVAS_PIXELS * sizeof(uint32_t));
+		r->gpu_copy = rsxAddressToOffset(r->gpu_frames[0], &r->gpu_offsets[0]) == 0 &&
+			rsxAddressToOffset(r->gpu_frames[1], &r->gpu_offsets[1]) == 0;
+	}
 	r->settings_loaded = ui_settings_load(r->settings_path, &mode, &theme, &hud);
 	ui_app_apply_settings(&app, mode, theme, hud);
 
@@ -306,8 +376,13 @@ void visual_renderer_publish(visual_renderer *r, const ui_status *status)
 }
 
 void visual_renderer_take_stats(visual_renderer *r, uint32_t *frames,
-	uint32_t *render_us_max, uint32_t *copy_us_max)
+	uint32_t *render_us_max, uint32_t *copy_us_max, uint32_t phase_us_max[4])
 {
+	int k;
+	for (k = 0; k < 4; ++k) {
+		phase_us_max[k] = r->phase_us_max[k];
+		r->phase_us_max[k] = 0;
+	}
 	*frames = r->frames;
 	*render_us_max = r->render_us_max;
 	*copy_us_max = r->copy_us_max;

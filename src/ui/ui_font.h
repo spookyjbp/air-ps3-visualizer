@@ -25,7 +25,8 @@ typedef struct {
 typedef enum {
 	UI_FONT_SMALL = 0,
 	UI_FONT_BODY = 1,
-	UI_FONT_TITLE = 2
+	UI_FONT_TITLE = 2,
+	UI_FONT_HEADING = 3 /* smaller title size for long names */
 } ui_font_id;
 
 const ui_font *ui_font_get(ui_font_id id);

@@ -11,6 +11,9 @@
 #define PROGRESS_Y 636
 #define FOOT_Y 668
 #define RIGHT_COLUMN 400
+#define TITLE_MAX_WIDTH (UI_CANVAS_WIDTH - MARGIN_X * 2)
+#define SCRIM_TOP 400
+#define SCRIM_RAMP 170
 #define HINT_SECONDS 7.0f
 #define TOAST_SECONDS 1.9f
 #define VOLUME_SECONDS 2.4f
@@ -33,15 +36,12 @@ static void bind(ui_canvas *c, uint32_t *px)
 	c->stride = UI_CANVAS_WIDTH;
 }
 
-void ui_app_init(ui_app *app, uint32_t *out, uint32_t *bg, uint32_t *bg_hud,
-	uint32_t *fx)
+void ui_app_init(ui_app *app, uint32_t *out, uint32_t *bg, uint32_t *bg_hud)
 {
 	memset(app, 0, sizeof(*app));
 	bind(&app->out, out);
 	bind(&app->bg, bg);
 	bind(&app->bg_hud, bg_hud);
-	bind(&app->fx, fx);
-	ui_canvas_fill(&app->fx, 0);
 	ui_spectrum_init(&app->spectrum, 48000.0f);
 	ui_visualizer_init(&app->vis);
 	app->mode = UI_VIS_SPECTRUM;
@@ -49,9 +49,13 @@ void ui_app_init(ui_app *app, uint32_t *out, uint32_t *bg, uint32_t *bg_hud,
 	app->hud_visible = 1;
 	app->hud_blend = 1.0f;
 	app->bg_theme = -1;
-	app->drawn_mode = -1;
 	app->hint_timer = HINT_SECONDS + 3.0f; /* show controls a bit longer at launch */
 	app->status.volume_percent = 100;
+}
+
+void ui_app_set_output(ui_app *app, uint32_t *out)
+{
+	bind(&app->out, out);
 }
 
 void ui_app_apply_settings(ui_app *app, int mode, int theme, int hud_visible)
@@ -170,21 +174,39 @@ static void draw_status_pill(ui_app *app, const ui_theme *t, float a)
 		fade_alpha(220.0f, a), 8);
 }
 
+/* Lays out the track title: one or two lines at the large size, otherwise
+ * up to three lines at a smaller size, so long names are shown in full. */
+static void layout_title(ui_app *app, const char *text)
+{
+	int complete = 0;
+	if (strcmp(app->title_source, text) == 0 && app->title_line_count > 0)
+		return;
+	(void)snprintf(app->title_source, sizeof(app->title_source), "%s", text);
+	app->title_font = UI_FONT_TITLE;
+	app->title_line_count = ui_text_wrap(UI_FONT_TITLE, text, 0, TITLE_MAX_WIDTH, 2,
+		app->title_lines, &complete);
+	if (!complete) {
+		app->title_font = UI_FONT_HEADING;
+		app->title_line_count = ui_text_wrap(UI_FONT_HEADING, text, 0,
+			TITLE_MAX_WIDTH, 3, app->title_lines, &complete);
+	}
+}
+
 static void draw_now_playing(ui_app *app, const ui_theme *t, float a,
 	uint64_t now_us)
 {
 	ui_canvas *c = &app->out;
 	const ui_status *st = &app->status;
-	char title[UI_TEXT_MAX + 4], body[UI_TEXT_MAX * 2 + 8], line[UI_TEXT_MAX * 2 + 8];
+	char body[UI_TEXT_MAX * 2 + 8], line[UI_TEXT_MAX * 2 + 8];
 	int max_w = UI_CANVAS_WIDTH - MARGIN_X * 2 - RIGHT_COLUMN;
+	int i, line_height;
 	if (st->state == UI_STATE_IDLE) {
-		ui_text_fit(UI_FONT_TITLE, "Ready for AirPlay", 0, max_w, title, sizeof(title));
+		layout_title(app, "Ready for AirPlay");
 		(void)snprintf(line, sizeof(line), "Choose %s in your iPhone's AirPlay menu",
 			st->receiver_name[0] ? st->receiver_name : "AirPS3");
 	} else {
-		ui_text_fit(UI_FONT_TITLE, st->title[0] ? st->title :
-			(st->state == UI_STATE_CONNECTING ? "Connecting\xe2\x80\xa6" : "AirPlay audio"),
-			0, max_w, title, sizeof(title));
+		layout_title(app, st->title[0] ? st->title :
+			(st->state == UI_STATE_CONNECTING ? "Connecting\xe2\x80\xa6" : "AirPlay audio"));
 		if (st->artist[0] && st->album[0])
 			(void)snprintf(line, sizeof(line), "%s \xc2\xb7 %s", st->artist, st->album);
 		else if (st->artist[0] || st->album[0])
@@ -194,11 +216,14 @@ static void draw_now_playing(ui_app *app, const ui_theme *t, float a,
 				st->receiver_name[0] ? st->receiver_name : "AirPS3");
 	}
 	ui_text_fit(UI_FONT_BODY, line, 0, max_w, body, sizeof(body));
-	(void)ui_text_draw(c, UI_FONT_TITLE, MARGIN_X, TITLE_Y, title, t->text,
-		fade_alpha(255.0f, a), -2);
+	line_height = app->title_font == UI_FONT_TITLE ? 62 : 47;
+	for (i = 0; i < app->title_line_count; ++i)
+		(void)ui_text_draw(c, app->title_font, MARGIN_X,
+			TITLE_Y - (app->title_line_count - 1 - i) * line_height,
+			app->title_lines[i], t->text, fade_alpha(255.0f, a),
+			app->title_font == UI_FONT_TITLE ? -2 : -1);
 	(void)ui_text_draw(c, UI_FONT_BODY, MARGIN_X, BODY_Y, body, t->text,
 		fade_alpha(165.0f, a), 0);
-
 	if (st->state != UI_STATE_IDLE && st->has_progress && st->duration_s > 1.0f) {
 		float pos = st->position_s;
 		float bar_w = 520.0f, frac;
@@ -377,14 +402,33 @@ static void draw_volume(ui_app *app, const ui_theme *t)
 
 /* ---------- frame ---------- */
 
+static uint64_t phase_started;
+
+/* Records the time since the previous mark into phase_us[phase] (keeps the
+ * maximum until the caller resets it). phase < 0 just starts the clock. */
+static void phase_mark(ui_app *app, int phase)
+{
+	uint64_t now;
+	if (app->clock_us == NULL)
+		return;
+	now = app->clock_us();
+	if (phase >= 0) {
+		uint32_t elapsed = (uint32_t)(now - phase_started);
+		if (elapsed > app->phase_us[phase])
+			app->phase_us[phase] = elapsed;
+	}
+	phase_started = now;
+}
+
 /* Darken behind the info text so it stays legible over bright visuals. In
  * the steady state this is baked into bg_hud; it is applied live only while
  * the info panel fades in or out. */
 static void apply_scrim(ui_canvas *c, const ui_theme *theme, float amount)
 {
 	int y;
-	for (y = TITLE_Y - 80; y < UI_CANVAS_HEIGHT; ++y) {
-		float f = clampf((float)(y - (TITLE_Y - 80)) / 120.0f, 0.0f, 1.0f);
+	for (y = SCRIM_TOP; y < UI_CANVAS_HEIGHT; ++y) {
+		float f = clampf((float)(y - SCRIM_TOP) / (float)SCRIM_RAMP, 0.0f, 1.0f);
+		f = f * f * (3.0f - 2.0f * f);
 		ui_rect_blend(c, 0, y, UI_CANVAS_WIDTH, 1, theme->bg_bottom,
 			(int)(f * 150.0f * amount));
 	}
@@ -419,33 +463,42 @@ void ui_app_render(ui_app *app, const float *left, const float *right,
 		app->bg_theme = app->theme;
 	}
 
+	phase_mark(app, -1);
 	ui_spectrum_update(&app->spectrum, left, right, dt);
+	phase_mark(app, UI_PHASE_ANALYSIS);
 
-	if (mode != app->drawn_mode) {
-		ui_canvas_fill(&app->fx, 0);
-		app->drawn_mode = mode;
-	} else {
-		ui_canvas_fade(&app->fx, ui_visualizer_trail_keep(mode));
-	}
-
+	/* Start from the cached background and draw the visualizer straight onto
+	 * it: one streaming copy per frame instead of clearing, fading and
+	 * compositing a separate light layer (memory bandwidth dominates on the
+	 * PS3's PPU). */
 	hud = app->hud_blend;
+	if (hud > 0.995f) {
+		ui_canvas_copy(&app->out, &app->bg_hud);
+	} else {
+		ui_canvas_copy(&app->out, &app->bg);
+		if (hud > 0.01f)
+			apply_scrim(&app->out, theme, hud);
+	}
+	phase_mark(app, UI_PHASE_COMPOSE);
+
 	layout.center_x = UI_CANVAS_WIDTH * 0.5f;
 	layout.center_y = 312.0f + (360.0f - 312.0f) * (1.0f - hud);
 	layout.width = 1100.0f;
 	layout.height = 400.0f + 120.0f * (1.0f - hud);
+	{
+		/* make room when a long title wraps onto extra lines */
+		float extra = app->title_line_count > 1 ? (float)((app->title_line_count - 1) *
+			(app->title_font == UI_FONT_TITLE ? 62 : 47)) : 0.0f;
+		app->title_room = approach(app->title_room, extra, 6.0f, dt);
+		layout.center_y -= app->title_room * 0.5f * hud;
+		layout.height -= app->title_room * 0.6f * hud;
+	}
 	layout.intensity = 0.45f + 0.55f * app->play_blend;
 	if (app->status.state == UI_STATE_PAUSED)
 		layout.intensity *= 0.7f;
-	ui_visualizer_draw(&app->vis, &app->fx, mode, theme, &app->spectrum,
+	ui_visualizer_draw(&app->vis, &app->out, mode, theme, &app->spectrum,
 		&layout, app->time, dt);
-
-	if (hud > 0.995f) {
-		ui_canvas_add(&app->out, &app->bg_hud, &app->fx);
-	} else {
-		ui_canvas_add(&app->out, &app->bg, &app->fx);
-		if (hud > 0.01f)
-			apply_scrim(&app->out, theme, hud);
-	}
+	phase_mark(app, UI_PHASE_VISUAL);
 
 	if (hud > 0.01f) {
 		draw_brand(app, theme, hud);
@@ -457,6 +510,7 @@ void ui_app_render(ui_app *app, const float *left, const float *right,
 	draw_hints(app, theme, hint_a);
 	draw_volume(app, theme);
 	draw_toast(app, theme);
+	phase_mark(app, UI_PHASE_INFO);
 }
 
 /* ---------- settings ---------- */

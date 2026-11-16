@@ -91,6 +91,13 @@ void ui_vspan_add(ui_canvas *c, int x, float y0, float y1, uint32_t color,
 int ui_text_width(ui_font_id font, const char *utf8, int tracking);
 int ui_text_draw(ui_canvas *c, ui_font_id font, int x, int y,
 	const char *utf8, uint32_t color, int alpha, int tracking);
+/* Word-wraps text into at most max_lines lines of max_width pixels. Words
+ * longer than a line are broken between characters. If text is left over,
+ * the last line ends with "...". Returns the number of lines; *complete is
+ * set to 1 when nothing had to be cut. */
+#define UI_WRAP_LINE_BYTES 160
+int ui_text_wrap(ui_font_id font, const char *utf8, int tracking, int max_width,
+	int max_lines, char lines[][UI_WRAP_LINE_BYTES], int *complete);
 /* Copies text into out, truncating with an ellipsis to fit max_width. */
 void ui_text_fit(ui_font_id font, const char *utf8, int tracking,
 	int max_width, char *out, size_t out_size);

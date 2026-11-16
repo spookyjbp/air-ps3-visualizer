@@ -50,7 +50,7 @@ APPID := AIRPLAY02
 CONTENTID := UP0001-$(APPID)_00-0000000000000000
 APP_VERSION ?= $(shell python3 "$(REPO_ROOT)/scripts/read-release-config.py" app_version)
 RTSP_PORT ?= 5000
-VISUAL_TARGET_FPS ?= 60
+VISUAL_TARGET_FPS ?= 30
 
 ifeq ($(LEGACY_RUNTIME),1)
 # The 2020 PSL1GHT headers declare select() through net/select.h. Do not set

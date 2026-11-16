@@ -54,18 +54,8 @@ void ui_visualizer_init(ui_visualizer *v)
 	v->rng = 0x9e3779b9U;
 	for (i = 0; i < UI_NEBULA_PARTICLES; ++i)
 		respawn(v, &v->particles[i], 0);
-}
-
-int ui_visualizer_trail_keep(int mode)
-{
-	switch (mode) {
-	case UI_VIS_SCOPE:
-		return 172;
-	case UI_VIS_NEBULA:
-		return 196;
-	default:
-		return 0;
-	}
+	for (i = 0; i < UI_SCOPE_MAX_WIDTH; ++i)
+		v->scope_edge[i] = sinf((float)i / (float)UI_SCOPE_MAX_WIDTH * PI_F);
 }
 
 static int scaled(float alpha, const ui_vis_layout *layout)
@@ -84,8 +74,8 @@ static void draw_spectrum(ui_canvas *fx, const ui_theme *theme,
 	float base = l->center_y + l->height * 0.32f;
 	float max_h = l->height * 0.78f;
 	int i;
-	ui_glow_ellipse_add(fx, l->center_x, base, l->width * 0.46f, l->height * 0.22f,
-		theme->accent_a, scaled(22.0f + s->bass * 46.0f, l));
+	ui_glow_ellipse_add(fx, l->center_x, base, l->width * 0.42f, l->height * 0.14f,
+		theme->accent_a, scaled(26.0f + s->bass * 50.0f, l));
 	for (i = 0; i < bars; ++i) {
 		float v = s->bands[i];
 		float h = 4.0f + v * max_h;
@@ -93,9 +83,7 @@ static void draw_spectrum(ui_canvas *fx, const ui_theme *theme,
 		uint32_t top = ui_theme_ramp(theme, i * 256 / (bars - 1));
 		uint32_t bottom = ui_rgb_lerp(top, theme->accent_a, 140);
 		float peak_y = base - 4.0f - s->peaks[i] * max_h;
-		/* soft bloom, solid core, faint floor reflection */
-		ui_round_rect_add(fx, x - 3.0f, base - h - 3.0f, bar_w + 6.0f, h + 3.0f,
-			(bar_w + 6.0f) * 0.5f, top, bottom, scaled(22.0f + v * 30.0f, l));
+		/* solid core and a faint floor reflection */
 		ui_round_rect_add(fx, x, base - h, bar_w, h, bar_w * 0.5f, top, bottom,
 			scaled(150.0f + v * 105.0f, l));
 		ui_round_rect_add(fx, x, base + 6.0f, bar_w, h * 0.32f, bar_w * 0.5f,
@@ -125,7 +113,7 @@ static void draw_ribbons(ui_visualizer *vis, ui_canvas *fx,
 	for (r = 0; r < 5; ++r) {
 		uint32_t color = ui_theme_ramp(theme, r * 64);
 		float amp = l->height * (0.07f + energy[r] * 0.22f + s->beat * 0.04f);
-		float thickness = l->height * (0.10f + 0.05f * (float)(r % 3));
+		float thickness = l->height * (0.08f + 0.03f * (float)(r % 3));
 		float prev_y = 0.0f;
 		float phase = vis->ribbon_phase * speed[r] * 2.0f + offset[r];
 		for (x = x0; x < x1; ++x) {
@@ -138,7 +126,8 @@ static void draw_ribbons(ui_visualizer *vis, ui_canvas *fx,
 			int a_sheet = scaled((16.0f + energy[r] * 26.0f) * (0.4f + 0.6f * edge), l);
 			if (x == x0)
 				prev_y = y;
-			ui_vspan_add(fx, x, y, y + thickness, color, a_sheet, 0);
+			if (r < 3)
+				ui_vspan_add(fx, x, y, y + thickness, color, a_sheet, 0);
 			ui_vspan_add(fx, x, prev_y - 0.9f, y + 0.9f, color, a_line, a_line);
 			prev_y = y;
 		}
@@ -155,7 +144,7 @@ static void draw_halo(ui_visualizer *vis, ui_canvas *fx, const ui_theme *theme,
 	float cx = l->center_x, cy = l->center_y;
 	int i;
 	vis->spin += dt * (0.15f + s->level * 0.6f);
-	ui_glow_add(fx, cx, cy, radius * 1.9f, theme->accent_b,
+	ui_glow_add(fx, cx, cy, radius * 1.55f, theme->accent_b,
 		scaled(12.0f + s->bass * 26.0f, l));
 	ui_glow_add(fx, cx, cy, radius * 1.02f, theme->accent_a,
 		scaled(14.0f + s->beat * 46.0f, l));
@@ -180,15 +169,18 @@ static void draw_halo(ui_visualizer *vis, ui_canvas *fx, const ui_theme *theme,
 		scaled(90.0f + s->level * 100.0f, l));
 }
 
-/* ---- Scope: triggered stereo waveform with phosphor trails ---- */
-static void draw_scope(ui_canvas *fx, const ui_theme *theme,
+/* ---- Scope: triggered stereo waveform; the last few frames are redrawn
+ * fainter as phosphor-style echoes (cheaper than fading a full layer) ---- */
+static void draw_scope(ui_visualizer *vis, ui_canvas *fx, const ui_theme *theme,
 	const ui_spectrum *s, const ui_vis_layout *l)
 {
 	const int span = UI_FFT_SIZE * 3 / 4;
-	int start = 0, i, x;
+	int start = 0, i, x, h, ch;
 	int x0 = (int)(l->center_x - l->width * 0.5f);
 	int width = (int)l->width;
 	float amp = l->height * 0.42f;
+	if (width > UI_SCOPE_MAX_WIDTH)
+		width = UI_SCOPE_MAX_WIDTH;
 	/* Trigger on a rising zero crossing for a steady picture. */
 	for (i = 1; i < UI_FFT_SIZE - span; ++i) {
 		float a = s->wave_left[i - 1] + s->wave_right[i - 1];
@@ -198,65 +190,84 @@ static void draw_scope(ui_canvas *fx, const ui_theme *theme,
 			break;
 		}
 	}
-	for (i = 0; i < 2; ++i) {
-		const float *wave = i == 0 ? s->wave_left : s->wave_right;
-		uint32_t color = i == 0 ? theme->accent_a : theme->accent_b;
-		float prev = 0.0f;
+	/* shift history and compute the new trace */
+	memmove(&vis->scope_y[1], &vis->scope_y[0],
+		sizeof(vis->scope_y[0]) * (UI_SCOPE_HISTORY - 1));
+	for (ch = 0; ch < 2; ++ch) {
+		const float *wave = ch == 0 ? s->wave_left : s->wave_right;
 		for (x = 0; x < width; ++x) {
 			float pos = (float)start + (float)x * (float)(span - 1) / (float)(width - 1);
 			int k = (int)pos;
 			float f = pos - (float)k;
 			float sample = wave[k] + (wave[k + 1] - wave[k]) * f;
-			float edge = sinf((float)x / (float)width * PI_F);
-			float y = l->center_y + clampf(sample * 1.6f, -1.0f, 1.0f) * amp * edge;
-			if (x == 0)
-				prev = y;
-			ui_vspan_add(fx, x0 + x, prev - 3.5f, y + 3.5f, color, scaled(30.0f, l), scaled(30.0f, l));
-			ui_vspan_add(fx, x0 + x, prev - 1.0f, y + 1.0f, color, scaled(220.0f, l), scaled(220.0f, l));
-			prev = y;
+			float edge = vis->scope_edge[x];
+			vis->scope_y[0][ch][x] = l->center_y +
+				clampf(sample * 1.6f, -1.0f, 1.0f) * amp * edge;
+		}
+	}
+	if (vis->scope_frames < UI_SCOPE_HISTORY)
+		++vis->scope_frames;
+	for (h = vis->scope_frames - 1; h >= 0; --h) {
+		static const float echo[UI_SCOPE_HISTORY] = { 1.0f, 0.42f, 0.2f, 0.09f };
+		for (ch = 0; ch < 2; ++ch) {
+			const float *y = vis->scope_y[h][ch];
+			uint32_t color = ch == 0 ? theme->accent_a : theme->accent_b;
+			int core = scaled(220.0f * echo[h], l);
+			int glow = scaled(30.0f * echo[h], l);
+			for (x = 1; x < width; ++x) {
+				if (h == 0)
+					ui_vspan_add(fx, x0 + x, y[x - 1] - 3.5f, y[x] + 3.5f, color, glow, glow);
+				ui_vspan_add(fx, x0 + x, y[x - 1] - 1.0f, y[x] + 1.0f, color, core, core);
+			}
 		}
 	}
 }
 
-/* ---- Nebula: a starfield that surges with the beat ---- */
+/* ---- Nebula: a starfield that surges with the beat. Each star draws its
+ * own motion streak (tail length follows speed), so no trail layer. ---- */
+static void project(const ui_vis_layout *l, float rot_c, float rot_s,
+	const ui_particle *p, float z, float *sx, float *sy)
+{
+	float focal = l->height * 0.55f;
+	float rx = p->x * rot_c - p->y * rot_s;
+	float ry = p->x * rot_s + p->y * rot_c;
+	*sx = l->center_x + rx / z * focal;
+	*sy = l->center_y + ry / z * focal;
+}
+
 static void draw_nebula(ui_visualizer *vis, ui_canvas *fx, const ui_theme *theme,
 	const ui_spectrum *s, const ui_vis_layout *l, float dt)
 {
 	float speed = 0.10f + s->level * 0.55f + s->bass * 0.35f + s->beat * 0.9f;
-	float focal = l->height * 0.55f;
+	float tail = 0.03f + speed * 0.22f;
+	float rot_c, rot_s;
 	int i;
 	vis->spin += dt * (0.04f + s->mids * 0.2f);
+	rot_c = cosf(vis->spin);
+	rot_s = sinf(vis->spin);
 	ui_glow_add(fx, l->center_x, l->center_y, l->height * (0.22f + s->bass * 0.18f),
-		theme->accent_b, scaled(6.0f + s->bass * 24.0f + s->beat * 30.0f, l));
+		theme->accent_b, scaled(8.0f + s->bass * 26.0f + s->beat * 30.0f, l));
 	for (i = 0; i < UI_NEBULA_PARTICLES; ++i) {
 		ui_particle *p = &vis->particles[i];
-		float rot = vis->spin;
-		float rx, ry, sx, sy, depth, size;
+		float sx, sy, tx, ty, depth, size;
 		uint32_t color;
 		p->z -= speed * dt * (0.6f + p->hue * 0.8f);
 		if (p->z <= 0.03f) {
 			respawn(vis, p, 1);
 			continue;
 		}
-		rx = p->x * cosf(rot) - p->y * sinf(rot);
-		ry = p->x * sinf(rot) + p->y * cosf(rot);
-		sx = l->center_x + rx / p->z * focal;
-		sy = l->center_y + ry / p->z * focal;
+		project(l, rot_c, rot_s, p, p->z, &sx, &sy);
 		if (sx < -50.0f || sx > (float)fx->w + 50.0f || sy < -50.0f ||
 			sy > (float)fx->h + 50.0f) {
 			respawn(vis, p, 1);
 			continue;
 		}
+		project(l, rot_c, rot_s, p, p->z + tail * (0.6f + p->hue * 0.8f), &tx, &ty);
 		depth = clampf(1.0f - p->z, 0.0f, 1.0f);
-		size = 1.0f + depth * depth * 3.5f;
+		size = 1.0f + depth * depth * 3.0f;
 		color = ui_theme_ramp(theme, (int)(p->hue * 256.0f));
-		if (p->has_prev)
-			ui_line_add(fx, p->px, p->py, sx, sy, size, color,
-				scaled(30.0f + depth * 150.0f, l));
-		ui_glow_add(fx, sx, sy, size * 2.4f, color, scaled(50.0f + depth * 140.0f, l));
-		p->px = sx;
-		p->py = sy;
-		p->has_prev = 1;
+		ui_line_add(fx, tx, ty, sx, sy, size, color, scaled(25.0f + depth * 150.0f, l));
+		ui_glow_add(fx, sx, sy, size * 2.2f, color, scaled(60.0f + depth * 150.0f, l));
 	}
 }
 
@@ -272,7 +283,7 @@ void ui_visualizer_draw(ui_visualizer *v, ui_canvas *fx, int mode,
 		draw_halo(v, fx, theme, s, layout, dt);
 		break;
 	case UI_VIS_SCOPE:
-		draw_scope(fx, theme, s, layout);
+		draw_scope(v, fx, theme, s, layout);
 		break;
 	case UI_VIS_NEBULA:
 		draw_nebula(v, fx, theme, s, layout, dt);

@@ -47,14 +47,13 @@ void ui_canvas_copy(ui_canvas *dst, const ui_canvas *src)
 void ui_canvas_add(ui_canvas *dst, const ui_canvas *a, const ui_canvas *b)
 {
 	int x, y;
+	/* Branch-free: the PPU is in-order and mispredicts are expensive. */
 	for (y = 0; y < dst->h; ++y) {
 		uint32_t *d = dst->px + (size_t)y * (size_t)dst->stride;
 		const uint32_t *pa = a->px + (size_t)y * (size_t)a->stride;
 		const uint32_t *pb = b->px + (size_t)y * (size_t)b->stride;
-		for (x = 0; x < dst->w; ++x) {
-			uint32_t v = pb[x];
-			d[x] = v ? ui_rgb_add(pa[x], v) : pa[x];
-		}
+		for (x = 0; x < dst->w; ++x)
+			d[x] = ui_rgb_add(pa[x], pb[x]);
 	}
 }
 
@@ -67,49 +66,56 @@ void ui_canvas_fade(ui_canvas *c, int keep)
 	}
 	for (y = 0; y < c->h; ++y) {
 		uint32_t *row = c->px + (size_t)y * (size_t)c->stride;
-		for (x = 0; x < c->w; ++x) {
-			uint32_t v = row[x];
-			if (v)
-				row[x] = ui_rgb_scale(v, keep);
-		}
+		for (x = 0; x < c->w; ++x)
+			row[x] = ui_rgb_scale(row[x], keep);
 	}
 }
 
 void ui_canvas_background(ui_canvas *c, uint32_t top, uint32_t bottom,
 	uint32_t glow, float glow_x, float glow_y, float glow_radius)
 {
-	static const float bayer[4][4] = {
-		{ 0.0f, 8.0f, 2.0f, 10.0f }, { 12.0f, 4.0f, 14.0f, 6.0f },
-		{ 3.0f, 11.0f, 1.0f, 9.0f }, { 15.0f, 7.0f, 13.0f, 5.0f }
+	/* 4x4 ordered dither, in 1/16 units centred on zero. */
+	static const int bayer[4][4] = {
+		{ -8, 0, -6, 2 }, { 4, -4, 6, -2 }, { -5, 3, -7, 1 }, { 7, -1, 5, -3 }
 	};
-	float tr = (float)((top >> 16) & 0xff), tg = (float)((top >> 8) & 0xff),
-		tb = (float)(top & 0xff);
-	float br = (float)((bottom >> 16) & 0xff), bg = (float)((bottom >> 8) & 0xff),
-		bb = (float)(bottom & 0xff);
-	float gr = (float)((glow >> 16) & 0xff), gg = (float)((glow >> 8) & 0xff),
-		gb = (float)(glow & 0xff);
-	float cx = (float)c->w * 0.5f, cy = (float)c->h * 0.5f;
-	float inv_diag = 1.0f / sqrtf(cx * cx + cy * cy);
-	float gx = glow_x * (float)c->w, gy = glow_y * (float)c->h;
-	float grad = glow_radius * (float)c->w;
+	int tr = (int)((top >> 16) & 0xff), tg = (int)((top >> 8) & 0xff), tb = (int)(top & 0xff);
+	int br = (int)((bottom >> 16) & 0xff), bgc = (int)((bottom >> 8) & 0xff), bb = (int)(bottom & 0xff);
+	int gr = (int)((glow >> 16) & 0xff), gg = (int)((glow >> 8) & 0xff), gb = (int)(glow & 0xff);
+	int cx = c->w / 2, cy = c->h / 2;
+	int gx = (int)(glow_x * (float)c->w), gy = (int)(glow_y * (float)c->h);
+	int grad = (int)(glow_radius * (float)c->w);
+	/* vignette = 1 - 1.1 * d^2 / diag^2, halo = (1 - e^2/grad^2)^2, all q16 */
+	int64_t diag2 = (int64_t)cx * cx + (int64_t)cy * cy;
+	int64_t grad2 = (int64_t)grad * grad;
+	int64_t vig_k, halo_k;
 	int x, y;
+	if (grad2 < 1)
+		grad2 = 1;
+	if (diag2 < 1)
+		diag2 = 1;
+	/* reciprocals so the per-pixel loop has no 64-bit divides */
+	vig_k = ((int64_t)72090 << 32) / diag2;     /* 1.1 in q16, scaled by 2^32 */
+	halo_k = ((int64_t)1 << 48) / grad2;        /* q16 result, scaled by 2^32 */
 	for (y = 0; y < c->h; ++y) {
 		uint32_t *row = c->px + (size_t)y * (size_t)c->stride;
-		float t = (float)y / (float)(c->h > 1 ? c->h - 1 : 1);
-		float r0 = tr + (br - tr) * t, g0 = tg + (bg - tg) * t,
-			b0 = tb + (bb - tb) * t;
+		int t16 = (int)(((int64_t)y << 16) / (c->h > 1 ? c->h - 1 : 1));
+		/* row base colour in 8.8 fixed point */
+		int r0 = (tr << 8) + (((br - tr) * t16) >> 8);
+		int g0 = (tg << 8) + (((bgc - tg) * t16) >> 8);
+		int b0 = (tb << 8) + (((bb - tb) * t16) >> 8);
+		int64_t dy2 = (int64_t)(y - cy) * (y - cy);
+		int64_t ey2 = (int64_t)(y - gy) * (y - gy);
 		for (x = 0; x < c->w; ++x) {
-			float dx = ((float)x - cx) * inv_diag, dy = ((float)y - cy) * inv_diag;
-			float vignette = 1.0f - 0.55f * (dx * dx + dy * dy) * 2.0f;
-			float ex = ((float)x - gx) / grad, ey = ((float)y - gy) / grad;
-			float d2 = ex * ex + ey * ey;
-			float halo = d2 < 1.0f ? (1.0f - d2) * (1.0f - d2) : 0.0f;
-			float dither = (bayer[y & 3][x & 3] - 7.5f) / 16.0f;
-			float r = r0 * vignette + gr * halo + dither;
-			float g = g0 * vignette + gg * halo + dither;
-			float b = b0 * vignette + gb * halo + dither;
-			row[x] = UI_RGB(clampi((int)(r + 0.5f), 0, 255),
-				clampi((int)(g + 0.5f), 0, 255), clampi((int)(b + 0.5f), 0, 255));
+			int64_t dx = x - cx, ex = x - gx;
+			int vig = 65536 - (int)(((dx * dx + dy2) * vig_k) >> 32);
+			int64_t e2 = ((ex * ex + ey2) * halo_k) >> 32;
+			int halo = e2 < 65536 ? (int)(((65536 - e2) * (65536 - e2)) >> 16) : 0;
+			int d = bayer[y & 3][x & 3] * 16; /* +-0.5 in 8.8 */
+			int r = (int)(((int64_t)r0 * vig) >> 16) + ((gr * halo) >> 8) + d;
+			int g = (int)(((int64_t)g0 * vig) >> 16) + ((gg * halo) >> 8) + d;
+			int b = (int)(((int64_t)b0 * vig) >> 16) + ((gb * halo) >> 8) + d;
+			row[x] = UI_RGB(clampi((r + 128) >> 8, 0, 255), clampi((g + 128) >> 8, 0, 255),
+				clampi((b + 128) >> 8, 0, 255));
 		}
 	}
 }
@@ -214,62 +220,108 @@ void ui_round_rect_add(ui_canvas *c, float x, float y, float w, float h,
 	float hx = w * 0.5f, hy = h * 0.5f, cx = x + hx, cy = y + hy;
 	int x0 = clampi((int)floorf(x), 0, c->w), x1 = clampi((int)ceilf(x + w), 0, c->w);
 	int y0 = clampi((int)floorf(y), 0, c->h), y1 = clampi((int)ceilf(y + h), 0, c->h);
-	float colcov[64];
+	int colcov[96];
 	int i, j, n = x1 - x0;
+	int t_q16, dt_q16;
 	if (n <= 0 || y1 <= y0 || alpha <= 0)
 		return;
-	radius = clampf(radius, 0.0f, hx < hy ? hx : hy);
-	if (n <= 64) {
-		for (i = 0; i < n; ++i) {
-			float px = (float)(x0 + i) + 0.5f;
-			float left = px - x, right = x + w - px;
-			colcov[i] = clampf((left < right ? left : right) + 0.5f, 0.0f, 1.0f);
-		}
+	if (n > 96) {
+		/* wide shapes are rare: split into vertical slices */
+		int mid = x0 + n / 2;
+		ui_round_rect_add(c, x, y, (float)mid - x, h, 0.0f, color_top, color_bottom, alpha);
+		ui_round_rect_add(c, (float)mid, y, x + w - (float)mid, h, 0.0f, color_top,
+			color_bottom, alpha);
+		return;
 	}
-	for (j = y0; j < y1; ++j) {
+	radius = clampf(radius, 0.0f, hx < hy ? hx : hy);
+	/* Integer per-column coverage; the per-pixel loop below has no float
+	 * math (float->int conversion stalls the PPU on every pixel). */
+	for (i = 0; i < n; ++i) {
+		float px = (float)(x0 + i) + 0.5f;
+		float left = px - x, right = x + w - px;
+		colcov[i] = (int)(clampf((left < right ? left : right) + 0.5f, 0.0f, 1.0f) * 256.0f);
+	}
+	t_q16 = (int)(65536.0f * ((float)y0 + 0.5f - y) / (h > 1.0f ? h : 1.0f));
+	dt_q16 = (int)(65536.0f / (h > 1.0f ? h : 1.0f));
+	for (j = y0; j < y1; ++j, t_q16 += dt_q16) {
 		uint32_t *row = c->px + (size_t)j * (size_t)c->stride;
 		float py = (float)j + 0.5f;
-		int t = (int)(256.0f * (py - y) / (h > 1.0f ? h : 1.0f));
-		uint32_t color = ui_rgb_lerp(color_top, color_bottom, clampi(t, 0, 256));
-		int corner = py < y + radius || py > y + h - radius || n > 64;
-		float vcov = clampf((py - y < y + h - py ? py - y : y + h - py) + 0.5f, 0.0f, 1.0f);
-		for (i = x0; i < x1; ++i) {
-			float cov;
-			if (corner)
-				cov = clampf(0.5f - round_box_sdf(
+		uint32_t color = ui_rgb_lerp(color_top, color_bottom,
+			clampi(t_q16 >> 8, 0, 256));
+		if (py < y + radius || py > y + h - radius) {
+			for (i = x0; i < x1; ++i) {
+				float cov = clampf(0.5f - round_box_sdf(
 					(float)i + 0.5f - cx, py - cy, hx, hy, radius), 0.0f, 1.0f);
-			else
-				cov = colcov[i - x0] * vcov;
-			add_px(&row[i], color, (int)(cov * (float)alpha));
+				add_px(&row[i], color, (int)(cov * (float)alpha));
+			}
+		} else {
+			int vcov = (int)(clampf((py - y < y + h - py ? py - y : y + h - py) + 0.5f,
+				0.0f, 1.0f) * (float)alpha);
+			for (i = 0; i < n; ++i)
+				add_px(&row[x0 + i], color, (colcov[i] * vcov) >> 8);
 		}
 	}
+}
+
+/* Coverage of one pixel at squared distance d2 from a line of half width
+ * `half`; returns 0..alpha. Fully covered pixels need no sqrt/conversion. */
+static inline int line_alpha(float d2, float inner2, float outer2, float half,
+	int alpha)
+{
+	if (d2 <= inner2)
+		return alpha;
+	if (d2 >= outer2)
+		return 0;
+	return (int)((half + 0.5f - sqrtf(d2)) * (float)alpha);
 }
 
 void ui_line_add(ui_canvas *c, float x0, float y0, float x1, float y1,
 	float width, uint32_t color, int alpha)
 {
 	float half = width * 0.5f;
+	float inner = half - 0.5f > 0.0f ? half - 0.5f : 0.0f;
+	float inner2 = inner * inner, outer2 = (half + 0.5f) * (half + 0.5f);
 	float dx = x1 - x0, dy = y1 - y0;
 	float len2 = dx * dx + dy * dy;
 	float inv = len2 > 1e-6f ? 1.0f / len2 : 0.0f;
+	float len = sqrtf(len2);
 	int bx0 = clampi((int)floorf((x0 < x1 ? x0 : x1) - half - 1.0f), 0, c->w);
 	int bx1 = clampi((int)ceilf((x0 > x1 ? x0 : x1) + half + 1.0f), 0, c->w);
 	int by0 = clampi((int)floorf((y0 < y1 ? y0 : y1) - half - 1.0f), 0, c->h);
 	int by1 = clampi((int)ceilf((y0 > y1 ? y0 : y1) + half + 1.0f), 0, c->h);
 	int i, j;
-	if (alpha <= 0)
+	if (alpha <= 0 || bx1 <= bx0 || by1 <= by0)
 		return;
-	for (j = by0; j < by1; ++j) {
-		uint32_t *row = c->px + (size_t)j * (size_t)c->stride;
-		float py = (float)j + 0.5f - y0;
+	/* Visit only a band around the segment rather than its bounding box. */
+	if (fabsf(dy) >= fabsf(dx)) {
+		float ext = (half + 1.5f) * (len > 0.0f ? len / fabsf(dy > 0.0f || dy < 0.0f ? dy : 1.0f) : 1.0f);
+		for (j = by0; j < by1; ++j) {
+			uint32_t *row = c->px + (size_t)j * (size_t)c->stride;
+			float py = (float)j + 0.5f - y0;
+			float s = dy != 0.0f ? clampf(py / dy, 0.0f, 1.0f) : 0.0f;
+			float xc = x0 + s * dx;
+			int i0 = clampi((int)(xc - ext), bx0, bx1), i1 = clampi((int)(xc + ext) + 1, bx0, bx1);
+			for (i = i0; i < i1; ++i) {
+				float px = (float)i + 0.5f - x0;
+				float t = clampf((px * dx + py * dy) * inv, 0.0f, 1.0f);
+				float ex = px - t * dx, ey = py - t * dy;
+				add_px(&row[i], color, line_alpha(ex * ex + ey * ey, inner2, outer2, half, alpha));
+			}
+		}
+	} else {
+		float ext = (half + 1.5f) * (len / fabsf(dx));
 		for (i = bx0; i < bx1; ++i) {
 			float px = (float)i + 0.5f - x0;
-			float t = clampf((px * dx + py * dy) * inv, 0.0f, 1.0f);
-			float ex = px - t * dx, ey = py - t * dy;
-			float d = sqrtf(ex * ex + ey * ey);
-			float cov = clampf(half + 0.5f - d, 0.0f, 1.0f);
-			if (cov > 0.0f)
-				add_px(&row[i], color, (int)(cov * (float)alpha));
+			float s = clampf(px / dx, 0.0f, 1.0f);
+			float yc = y0 + s * dy;
+			int j0 = clampi((int)(yc - ext), by0, by1), j1 = clampi((int)(yc + ext) + 1, by0, by1);
+			for (j = j0; j < j1; ++j) {
+				float py = (float)j + 0.5f - y0;
+				float t = clampf((px * dx + py * dy) * inv, 0.0f, 1.0f);
+				float ex = px - t * dx, ey = py - t * dy;
+				add_px(&c->px[(size_t)j * (size_t)c->stride + (size_t)i], color,
+					line_alpha(ex * ex + ey * ey, inner2, outer2, half, alpha));
+			}
 		}
 	}
 }
@@ -319,26 +371,33 @@ void ui_glow_ellipse_add(ui_canvas *c, float cx, float cy, float rx, float ry,
 	uint32_t color, int alpha)
 {
 	int y0 = clampi((int)floorf(cy - ry), 0, c->h), y1 = clampi((int)ceilf(cy + ry), 0, c->h);
-	float inv_rx = rx > 0.0f ? 1.0f / rx : 0.0f, inv_ry = ry > 0.0f ? 1.0f / ry : 0.0f;
-	int i, j;
-	if (alpha <= 0 || rx <= 0.0f || ry <= 0.0f)
+	float inv_ry = ry > 0.0f ? 1.0f / ry : 0.0f;
+	int icx = (int)floorf(cx);
+	int inv_rx2_q24;
+	int j;
+	if (alpha <= 0 || rx < 0.5f || ry < 0.5f)
 		return;
+	if (alpha > 255)
+		alpha = 255;
+	inv_rx2_q24 = (int)(16777216.0f / (rx * rx));
+	/* Fixed point inside the row: falloff (1 - d^2)^2 with no float math. */
 	for (j = y0; j < y1; ++j) {
 		uint32_t *row = c->px + (size_t)j * (size_t)c->stride;
 		float ny = ((float)j + 0.5f - cy) * inv_ry;
 		float rem = 1.0f - ny * ny;
-		float half;
-		int x0, x1;
+		int rem_q16, half, i0, i1, i;
 		if (rem <= 0.0f)
 			continue;
-		half = rx * sqrtf(rem);
-		x0 = clampi((int)floorf(cx - half), 0, c->w);
-		x1 = clampi((int)ceilf(cx + half), 0, c->w);
-		for (i = x0; i < x1; ++i) {
-			float nx = ((float)i + 0.5f - cx) * inv_rx;
-			float f = rem - nx * nx;
-			if (f > 0.0f) {
-				int a = (int)(f * f * (float)alpha);
+		rem_q16 = (int)(rem * 65536.0f);
+		half = (int)(rx * sqrtf(rem)) + 1;
+		i0 = clampi(icx - half, 0, c->w);
+		i1 = clampi(icx + half + 1, 0, c->w);
+		for (i = i0; i < i1; ++i) {
+			int d = i - icx;
+			int f = rem_q16 - ((d * d * inv_rx2_q24) >> 8);
+			if (f > 0) {
+				int f8 = f >> 8;
+				int a = (f8 * f8 * alpha) >> 16;
 				if (a > 0)
 					row[i] = ui_rgb_add(row[i], ui_rgb_scale(color, a));
 			}
@@ -358,9 +417,10 @@ void ui_vspan_add(ui_canvas *c, int x, float y0, float y1, uint32_t color,
 	float top = y0 < y1 ? y0 : y1, bottom = y0 < y1 ? y1 : y0;
 	int at = y0 < y1 ? alpha_top : alpha_bottom;
 	int ab = y0 < y1 ? alpha_bottom : alpha_top;
-	int j0, j1, j;
+	int j0, j1, j, a_q16, da_q16;
 	float span;
-	if (x < 0 || x >= c->w)
+	uint32_t *p;
+	if (x < 0 || x >= c->w || (at <= 0 && ab <= 0))
 		return;
 	if (bottom - top < 1.0f) {
 		float mid = (top + bottom) * 0.5f;
@@ -368,16 +428,35 @@ void ui_vspan_add(ui_canvas *c, int x, float y0, float y1, uint32_t color,
 		bottom = mid + 0.5f;
 	}
 	span = bottom - top;
-	j0 = clampi((int)floorf(top), 0, c->h);
-	j1 = clampi((int)ceilf(bottom), 0, c->h);
-	for (j = j0; j < j1; ++j) {
-		float py0 = (float)j, py1 = (float)j + 1.0f;
-		float cov = (py1 < bottom ? py1 : bottom) - (py0 > top ? py0 : top);
-		float t = ((float)j + 0.5f - top) / span;
-		int a = (int)((float)at + (float)(ab - at) * clampf(t, 0.0f, 1.0f));
-		if (cov > 0.0f)
-			add_px(&c->px[(size_t)j * (size_t)c->stride + (size_t)x], color,
-				(int)(cov * (float)a));
+	j0 = (int)floorf(top);
+	j1 = (int)ceilf(bottom);
+	da_q16 = (int)((float)(ab - at) * 65536.0f / span);
+	a_q16 = (int)(((float)at + (float)(ab - at) * (((float)j0 + 0.5f - top) / span)) * 65536.0f);
+	if (j0 < 0) {
+		a_q16 += da_q16 * (0 - j0);
+		j0 = 0;
+	}
+	if (j1 > c->h)
+		j1 = c->h;
+	if (j0 >= j1)
+		return;
+	p = &c->px[(size_t)j0 * (size_t)c->stride + (size_t)x];
+	/* Partial coverage on the end rows only; integer alpha steps between. */
+	{
+		float first = (float)j0 + 1.0f < bottom ? (float)j0 + 1.0f - top : span;
+		int a = (int)(first * (float)(a_q16 >> 16));
+		add_px(p, color, a);
+		p += c->stride;
+		a_q16 += da_q16;
+	}
+	for (j = j0 + 1; j < j1 - 1; ++j, a_q16 += da_q16, p += c->stride) {
+		int a = a_q16 >> 16;
+		if (a > 0)
+			*p = ui_rgb_add(*p, ui_rgb_scale(color, a > 256 ? 256 : a));
+	}
+	if (j1 - 1 > j0) {
+		float last = bottom - (float)(j1 - 1);
+		add_px(p, color, (int)(last * (float)(a_q16 >> 16)));
 	}
 }
 
@@ -407,6 +486,9 @@ int ui_text_draw(ui_canvas *c, ui_font_id id, int x, int y,
 	const ui_font *font = ui_font_get(id);
 	const char *p = utf8;
 	int pen_q2 = x * 4;
+	/* alpha 0..255 -> blend weight 0..256 per 4-bit glyph level */
+	int text_full = alpha + (alpha >> 7);
+	int text_step = (text_full * 256) / 15;
 	if (utf8 == NULL || alpha <= 0)
 		return x;
 	while (*p) {
@@ -428,7 +510,7 @@ int ui_text_draw(ui_canvas *c, ui_font_id id, int x, int y,
 				int a = (n & 1) ? (packed & 0x0f) : (packed >> 4);
 				if (a == 0 || px < 0 || px >= c->w)
 					continue;
-				row[px] = ui_rgb_blend(row[px], color, (a * 17 * alpha) / 255 + (a == 15 && alpha == 255));
+				row[px] = ui_rgb_blend(row[px], color, a == 15 ? text_full : (a * text_step) >> 8);
 			}
 		}
 		pen_q2 += glyph_advance(font, index, tracking);
@@ -466,4 +548,95 @@ void ui_text_fit(ui_font_id id, const char *utf8, int tracking,
 			return;
 	}
 	out[0] = '\0';
+}
+
+static int width_of_range(ui_font_id font, const char *start, size_t length,
+	int tracking)
+{
+	char buffer[UI_WRAP_LINE_BYTES];
+	if (length >= sizeof(buffer))
+		length = sizeof(buffer) - 1;
+	memcpy(buffer, start, length);
+	buffer[length] = '\0';
+	return ui_text_width(font, buffer, tracking);
+}
+
+static void copy_range(char *out, const char *start, size_t length)
+{
+	if (length >= UI_WRAP_LINE_BYTES)
+		length = UI_WRAP_LINE_BYTES - 1;
+	/* never end on a partial UTF-8 sequence */
+	while (length > 0 && ((unsigned char)start[length] & 0xc0) == 0x80 &&
+		start[length] != '\0')
+		--length;
+	memcpy(out, start, length);
+	out[length] = '\0';
+	while (length > 0 && out[length - 1] == ' ')
+		out[--length] = '\0';
+}
+
+int ui_text_wrap(ui_font_id font, const char *utf8, int tracking, int max_width,
+	int max_lines, char lines[][UI_WRAP_LINE_BYTES], int *complete)
+{
+	const char *p = utf8;
+	int count = 0;
+	if (complete != NULL)
+		*complete = 1;
+	if (utf8 == NULL || max_lines <= 0)
+		return 0;
+	while (count < max_lines) {
+		const char *best = NULL, *scan;
+		while (*p == ' ')
+			++p;
+		if (*p == '\0')
+			break;
+		/* longest run of whole words that fits */
+		for (scan = p;; ) {
+			const char *end = scan;
+			while (*end != '\0' && *end != ' ')
+				++end;
+			if ((size_t)(end - p) >= UI_WRAP_LINE_BYTES - 4 ||
+				width_of_range(font, p, (size_t)(end - p), tracking) > max_width)
+				break;
+			best = end;
+			if (*end == '\0')
+				break;
+			scan = end + 1;
+		}
+		if (best == NULL) {
+			/* a single word wider than the line: break between characters */
+			const char *q = p, *last = NULL;
+			while (*q != '\0' && *q != ' ') {
+				const char *next = q;
+				(void)ui_utf8_next(&next);
+				if ((size_t)(next - p) >= UI_WRAP_LINE_BYTES - 4 ||
+					width_of_range(font, p, (size_t)(next - p), tracking) > max_width)
+					break;
+				last = next;
+				q = next;
+			}
+			if (last == NULL) {
+				last = p;
+				(void)ui_utf8_next(&last);
+			}
+			best = last;
+		}
+		if (count == max_lines - 1) {
+			const char *rest = best;
+			while (*rest == ' ')
+				++rest;
+			if (*rest != '\0') {
+				/* out of lines: ellipsize the remainder onto the last line */
+				ui_text_fit(font, p, tracking, max_width, lines[count],
+					UI_WRAP_LINE_BYTES);
+				if (complete != NULL)
+					*complete = 0;
+				return count + 1;
+			}
+		}
+		copy_range(lines[count], p, (size_t)(best - p));
+		++count;
+		p = best;
+	}
+	return count;
 }
