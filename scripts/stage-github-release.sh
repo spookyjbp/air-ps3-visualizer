@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+GITHUB_REPO="${GITHUB_REPO:-spookyjbp/air-ps3-visualizer}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -32,7 +33,7 @@ if git -C "$ROOT" show-ref --verify --quiet "refs/tags/$TAG"; then
 	echo "Refusing to reuse existing tag $TAG" >&2
 	exit 1
 fi
-if gh release view "$TAG" -R MKWorldWide/ps3-airplay >/dev/null 2>&1; then
+if gh release view "$TAG" -R "$GITHUB_REPO" >/dev/null 2>&1; then
 	echo "A GitHub release already exists for $TAG" >&2
 	exit 1
 fi
@@ -57,6 +58,6 @@ gh release create "$TAG" "$PKG" "$EVIDENCE" "$SUMS" "$NOTES" \
 	"$ROOT/licenses/MBED-TLS-3.6.7-LICENSE.txt" \
 	"$ROOT/licenses/PS3DK-LICENSE.txt" "$ROOT/licenses/PSL1GHT-LICENSE.txt" \
 	"$ROOT/licenses/PSL1GHT-RSX-LICENSE.txt" \
-	-R MKWorldWide/ps3-airplay --draft --title "AIR PS3 $TAG" \
+	-R "$GITHUB_REPO" --draft --title "AIR PS3 Visualizer $TAG" \
 	--target "$SOURCE" --notes-file "$NOTES"
 echo "Created a draft release after all local validation; publication remains a separate workflow dispatch."

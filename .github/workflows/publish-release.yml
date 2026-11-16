@@ -1,4 +1,4 @@
-name: Publish verified AIR PS3 release
+name: Publish verified AIR PS3 Visualizer release
 
 on:
   workflow_dispatch:
@@ -55,7 +55,7 @@ jobs:
           repo = os.environ["GH_REPO"]
           tag = os.environ["RELEASE_TAG"]
           expected = {
-              "ps3-airplay-receiver-1.0.0.pkg", "release-evidence.json", "SHA256SUMS.txt",
+              "air-ps3-visualizer-1.0.0.pkg", "release-evidence.json", "SHA256SUMS.txt",
               "RELEASE_NOTES-v1.0.0.md", "INSTALLATION.md", "THIRD_PARTY_NOTICES.md",
               "MBED-TLS-3.6.7-LICENSE.txt", "PS3DK-LICENSE.txt", "PSL1GHT-LICENSE.txt",
               "PSL1GHT-RSX-LICENSE.txt",
@@ -124,7 +124,7 @@ jobs:
           from pathlib import Path
           actual = {p.name for p in Path("build/release-assets").iterdir() if p.is_file()}
           expected = {
-              "ps3-airplay-receiver-1.0.0.pkg", "release-evidence.json", "SHA256SUMS.txt",
+              "air-ps3-visualizer-1.0.0.pkg", "release-evidence.json", "SHA256SUMS.txt",
               "RELEASE_NOTES-v1.0.0.md", "INSTALLATION.md", "THIRD_PARTY_NOTICES.md",
               "MBED-TLS-3.6.7-LICENSE.txt", "PS3DK-LICENSE.txt", "PSL1GHT-LICENSE.txt",
               "PSL1GHT-RSX-LICENSE.txt",

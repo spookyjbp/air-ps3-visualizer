@@ -12,7 +12,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "scripts/verify-release-evidence.py"
 CONFIG = json.loads((ROOT / "release.json").read_text())
-CONTENT_ID = b"UP0001-AIRPLAY02_00-0000000000000000"
+CONTENT_ID = b"UP0001-AIRPLAY03_00-0000000000000000"
 CHECKS = (
     "host_tests_asan_ubsan", "ppu_crypto_and_receiver_build",
     "cellos_elf_validation", "sfo_version_title_id_and_boot_metadata",
@@ -32,7 +32,7 @@ def invoke(pkg, evidence, sha):
 
 with tempfile.TemporaryDirectory() as temp:
     root = Path(temp)
-    pkg = root / f"ps3-airplay-receiver-{CONFIG['app_version']}.pkg"
+    pkg = root / f"air-ps3-visualizer-{CONFIG['app_version']}.pkg"
     payload = bytearray(0xC0)
     payload[:4] = b"\x7fPKG"
     payload[4:8] = (1).to_bytes(4, "big")

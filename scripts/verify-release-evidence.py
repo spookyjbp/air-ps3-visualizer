@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed validation for an AIR PS3 draft-release package and evidence."""
+"""Fail-closed validation for an AIR PS3 Visualizer draft-release package and evidence."""
 
 import argparse
 import hashlib
@@ -52,11 +52,11 @@ def main():
             fail(f"{ev_key} differs from release.json")
     if evidence.get("sfo_version") != config.get("sfo_version"):
         fail("SFO VERSION and APP_VER differ")
-    if evidence.get("content_id") != "UP0001-AIRPLAY02_00-0000000000000000":
+    if evidence.get("content_id") != "UP0001-AIRPLAY03_00-0000000000000000":
         fail("content ID mismatch")
     if any(evidence.get("validation", {}).get(name) != "passed" for name in REQUIRED_CHECKS):
         fail("one or more source-build checks are not marked passed")
-    expected_name = f"ps3-airplay-receiver-{config['app_version']}.pkg"
+    expected_name = f"air-ps3-visualizer-{config['app_version']}.pkg"
     if args.package.name != expected_name:
         fail("package filename does not match configured version")
     package_data = args.package.read_bytes()

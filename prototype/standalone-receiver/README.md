@@ -33,7 +33,7 @@ python3 scripts/prepare-diagnostic-background.py \
 ./scripts/package-lima-standalone-receiver.sh
 ```
 
-The result is `build/lima-standalone-package/ps3-airplay-receiver.pkg`. The
+The result is `build/lima-standalone-package/air-ps3-visualizer-<version>.pkg`. The
 packager creates an NPDRM EBOOT bound to the package content ID, includes the
 PSL1GHT default `ICON0.PNG` and a size-checked 1280x720 RGB background, and
 validates package listing, SFO metadata, extraction, and payload equality. The
@@ -43,7 +43,7 @@ stays under ignored `build/`.
 ## Runtime and cleanup
 
 The app uses RTSP TCP 5000, UDP 6000–6002, and mDNS UDP 5353. It writes a capped
-16 KiB diagnostic log to `/dev_hdd0/tmp/ps3-airplay.log`; it does not log audio
+16 KiB diagnostic log to `/dev_hdd0/tmp/air-ps3-visualizer.log`; it does not log audio
 payloads, SDP bodies, keys, peer IPs, or track names. XMB exit triggers ordered
 audio/network/crypto cleanup. The screen draws only the supplied background;
 there is no blue diagnostic frame, `DISPLAY ACTIVE` label, or on-screen exit

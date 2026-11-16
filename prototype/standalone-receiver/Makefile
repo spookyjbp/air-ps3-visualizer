@@ -46,8 +46,8 @@ PROJECT_CFILES := \
 	../../src/ui/ui_trippy.c \
 	../../src/ui/ui_visualizer.c
 INCLUDES := include
-TITLE := AIR PS3
-APPID := AIRPLAY02
+TITLE := $(shell python3 "$(REPO_ROOT)/scripts/read-release-config.py" xmb_title)
+APPID := $(shell python3 "$(REPO_ROOT)/scripts/read-release-config.py" title_id)
 CONTENTID := UP0001-$(APPID)_00-0000000000000000
 APP_VERSION ?= $(shell python3 "$(REPO_ROOT)/scripts/read-release-config.py" app_version)
 RTSP_PORT ?= 5000
@@ -71,7 +71,7 @@ CFLAGS := -O2 -Wall -Wextra -Werror -Wno-error=deprecated-declarations \
 	-DMBEDTLS_NO_PLATFORM_ENTROPY -DMBEDTLS_PLATFORM_MS_TIME_ALT \
 	-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls_ps3_user_config.h\" \
 	-DRAOP_USE_PSL1GHT -DRAOP_VERBOSE_LOGGING=1 \
-	-DAPP_VERSION_STRING=\"$(APP_VERSION)\" \
+	-DAPP_VERSION_STRING=\"$(APP_VERSION)\" -DAPP_TITLE_ID=\"$(APPID)\" \
 	-DRAOP_RTSP_PORT=$(RTSP_PORT) -DVISUAL_TARGET_FPS=$(VISUAL_TARGET_FPS) $(SELECT_HEADER_COMPAT) \
 	-include $(PS3DK)/ppu/include/sys/select.h \
 	-I$(MBEDTLS_INCLUDE) $(INCLUDE)

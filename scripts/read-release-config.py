@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read the checked-in AIR PS3 release version/configuration."""
+"""Read the checked-in AIR PS3 Visualizer release version/configuration."""
 
 import json
 import re
@@ -16,7 +16,7 @@ def validate(config):
         raise ValueError("app_version must be semantic X.Y.Z")
     if not re.fullmatch(r"[0-9]{2}\.[0-9]{2}", config["sfo_version"]):
         raise ValueError("sfo_version must be fixed-width XX.YY")
-    if config["title_id"] != "AIRPLAY02" or config["xmb_title"] != "AIR PS3":
+    if config["title_id"] != "AIRPLAY03" or config["xmb_title"] != "AIR PS3 Visualizer":
         raise ValueError("release identity changed without an explicit project decision")
     if config["raop_name"] != "AirPS3":
         raise ValueError("release RAOP name changed without an explicit project decision")

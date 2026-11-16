@@ -27,12 +27,12 @@ def validate(path, expected_version, expected_title=None):
             raise ValueError(f'{key} must use XX.YY')
         if fields[key] != expected_version:
             raise ValueError(f'{key} differs from requested SFO version')
-    for key, expected in {'TITLE_ID': 'AIRPLAY02', 'CATEGORY': 'HG', 'BOOTABLE': 1}.items():
+    for key, expected in {'TITLE_ID': 'AIRPLAY03', 'CATEGORY': 'HG', 'BOOTABLE': 1}.items():
         if fields.get(key) != expected:
             raise ValueError(f'unexpected {key}')
     if expected_title is not None and fields.get('TITLE') != expected_title:
         raise ValueError('unexpected TITLE')
-    print(f'SFO launch metadata passed: AIRPLAY02, {expected_version}, {fields.get("TITLE")}')
+    print(f'SFO launch metadata passed: AIRPLAY03, {expected_version}, {fields.get("TITLE")}')
 
 
 if __name__ == '__main__':

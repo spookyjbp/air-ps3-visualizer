@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 
-CONTENT_ID_PREFIX = "UP0001-AIRPLAY02_00-"
+CONTENT_ID_PREFIX = "UP0001-AIRPLAY03_00-"
 
 
 def sha256(path):
@@ -62,7 +62,7 @@ def main():
         raise SystemExit("ELF build manifest source revision mismatch")
     if build_info.get("app_version") != args.app_version:
         raise SystemExit("ELF build manifest app version mismatch")
-    if args.package.name != f"ps3-airplay-receiver-{args.app_version}.pkg":
+    if args.package.name != f"air-ps3-visualizer-{args.app_version}.pkg":
         raise SystemExit("package filename does not match release version")
 
     artifacts = {}

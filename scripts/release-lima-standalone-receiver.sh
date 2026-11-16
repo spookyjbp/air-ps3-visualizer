@@ -67,7 +67,7 @@ python3 "$SCRIPT_DIR/prepare-diagnostic-background.py" \
 python3 "$SCRIPT_DIR/validate-air-ps3-artwork.py" "$PROJECT_ROOT/assets/air-ps3"
 bash "$SCRIPT_DIR/package-lima-standalone-receiver.sh"
 
-PACKAGE="$PROJECT_ROOT/build/lima-standalone-package/ps3-airplay-receiver-${APP_VERSION}.pkg"
+PACKAGE="$PROJECT_ROOT/build/lima-standalone-package/air-ps3-visualizer-${APP_VERSION}.pkg"
 test -s "$PACKAGE"
 sha256sum "$PACKAGE"
 wc -c "$PACKAGE"

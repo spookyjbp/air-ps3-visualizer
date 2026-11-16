@@ -1,6 +1,6 @@
-# Visual UI (Visualizer Edition)
+# Visual UI
 
-This fork replaces AIR PS3's static background with an animated, music-reactive
+AIR PS3 Visualizer replaces AIR PS3's static background with an animated, music-reactive
 interface: a clean now-playing screen, five visualizers, six color themes, and
 volume/mode overlays. AirPlay discovery, decryption, ALAC decoding and audio
 output are unchanged.
@@ -32,7 +32,7 @@ Track text and progress come from the sender. The receiver now advertises
 
 The hints fade out a few seconds after the last button press. Mode, theme and
 info-panel choices are saved to
-`/dev_hdd0/game/AIRPLAY02/USRDIR/ui-settings.txt` about three seconds after a
+`/dev_hdd0/game/AIRPLAY03/USRDIR/ui-settings.txt` about three seconds after a
 change, and on exit.
 
 ## Visualizers

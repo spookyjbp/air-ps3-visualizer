@@ -12,8 +12,8 @@ spec.loader.exec_module(module)
 current = module.load()
 assert current["app_version"] == "1.0.0"
 assert current["sfo_version"] == "01.00"
-assert current["title_id"] == "AIRPLAY02"
-assert current["xmb_title"] == "AIR PS3"
+assert current["title_id"] == "AIRPLAY03"
+assert current["xmb_title"] == "AIR PS3 Visualizer"
 assert current["raop_name"] == "AirPS3"
 next_release = dict(current, app_version="1.0.1", sfo_version="01.01")
 assert module.validate(next_release)["app_version"] == "1.0.1"
